@@ -1,0 +1,17 @@
+# © 2018 Joseph Cameron - All Rights Reserved
+
+cmake_minimum_required(VERSION 3.9 FATAL_ERROR)
+
+jfc_generate_documentation_doxygen(
+    PROJECT_LOGO ${CMAKE_CURRENT_LIST_DIR}/icon.png
+
+    README_PATH  ../README.md
+    
+    INCLUDE_DIRECTORIES
+        ../include/
+)
+
+jfc_generate_readme_md(
+    BRIEF "Task-based concurrency lib. Threadgroup that wraps the \"moody concurrent queue\" lockless queue"
+)
+
