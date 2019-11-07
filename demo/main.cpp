@@ -1,5 +1,6 @@
 #include <jfc/thread_group.h>
 
+#include <atomic>
 #include <chrono>
 #include <cstdlib>
 #include <iostream>

@@ -26,11 +26,18 @@ jfc_project(library
         ${CMAKE_CURRENT_SOURCE_DIR}/src/thread_group.cpp
 )
 
+if(CMAKE_SYSTEM_NAME MATCHES "Linux")
+    find_package(Threads REQUIRED)
+    
+    set("jfc-thread_group_LIBRARIES" 
+        "${jfc-thread_group_LIBRARIES};${CMAKE_THREAD_LIBS_INIT}")
+endif()
+
 if (JFC_BUILD_DEMO)
     add_subdirectory(demo)
 endif()
 
-    if (JFC_BUILD_TESTS)
+if (JFC_BUILD_TESTS)
     add_subdirectory(test)
 endif()
 

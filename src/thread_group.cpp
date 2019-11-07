@@ -3,6 +3,7 @@
 #include <moody/concurrentqueue.h>
 
 #include <atomic>
+#include <thread>
 
 namespace jfc
 {
