@@ -21,7 +21,7 @@ matrix:
       script:
         - |
           cd workspace
-          cmake .. -DCMAKE_CXX_FLAGS="-pedantic -Wall -Wextra -Ofast -flto -funroll-loops -m64 -march=native"
+          cmake .. -DCMAKE_CXX_FLAGS="-pedantic -Wall -Wextra -Ofast -flto -funroll-loops -m64 -march=native" -DJFC_BUILD_DOCS=OFF
           make
           ctest --extra-verbose
 
@@ -32,7 +32,7 @@ matrix:
       script:
         - |
           cd workspace
-          cmake .. -DCMAKE_CXX_FLAGS="-pedantic -Weverything -Wno-c++98-compat -Wno-padded -Ofast -flto -funroll-loops -m64 -march=native -std=c++17 -stdlib=libc++"
+          cmake .. -DCMAKE_CXX_FLAGS="-pedantic -Weverything -Wno-c++98-compat -Wno-padded -Ofast -flto -funroll-loops -m64 -march=native -std=c++17 -stdlib=libc++" -DJFC_BUILD_DOCS=OFF
           make
           ctest --extra-verbose
 
