@@ -93,7 +93,7 @@ matrix:
           cd ..
           after_success:
           - |
-            coveralls --exclude test --exclude workspace/CMakeFiles --exclude cmake --exclude src --gcov-options '\-lp'
+            coveralls --exclude workspace/CMakeFiles --exclude cmake --gcov-options '\-lp'
 
 before_script: 
   - |
