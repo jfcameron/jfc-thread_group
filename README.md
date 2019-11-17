@@ -15,11 +15,11 @@ Weak handle is similar to Shared, except it does not contribute to the use_count
 
 ## CI & Documentation
 
-Documentation can be generated with doxygen or viewed online here: https://jfcameron.github.io/jfc-smart_handles/
+Documentation can be generated with doxygen or viewed online here: https://jfcameron.github.io/jfc-thread_group/
 
 Unit tests written with catch2 are available under test/
 
-Coverage calculated with gcov. Viewable online here: https://coveralls.io/github/jfcameron/jfc-smart_handles
+Coverage calculated with gcov. Viewable online here: https://coveralls.io/github/jfcameron/jfc-thread_group
 
-CI done using Travis CI. Build scripts cover Windows, Linux, Mac; Clang, GCC, MSVC, MinGW: https://travis-ci.org/jfcameron/jfc-smart_handles
+CI done using Travis CI. Build scripts cover Windows, Linux, Mac; Clang, GCC, MSVC, MinGW: https://travis-ci.org/jfcameron/jfc-thread_group
 
