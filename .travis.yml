@@ -1,0 +1,101 @@
+# © 2019 Joseph Cameron - All Rights Reserved
+# jfc-smart_handles ci script
+
+dist: bionic 
+sudo: required
+language: cpp
+
+matrix:
+  include:
+    # Build scripts
+    - os: linux
+      name: build linux gcc
+      compiler: gcc
+      addons:
+        apt:
+          sources:
+            - ubuntu-toolchain-r-test
+          packages:
+            - cmake
+            - git
+      script:
+        - |
+          cd workspace
+          cmake .. -DCMAKE_CXX_FLAGS="-pedantic -Wall -Wextra -Ofast -flto -funroll-loops -m64 -march=native"
+          make
+          ctest --extra-verbose
+
+    - os: osx
+      name: build macos clang
+      osx_image: xcode11.2
+      compiler: clang
+      script:
+        - |
+          cd workspace
+          cmake .. -DCMAKE_CXX_FLAGS="-pedantic -Weverything -Wno-c++98-compat -Wno-padded -Ofast -flto -funroll-loops -m64 -march=native -std=c++17 -stdlib=libc++"
+          make
+          ctest --extra-verbose
+
+    - os: windows
+      name: build windows msvc
+      compiler: MSVC
+      script: 
+        - |
+          cd workspace
+          cmake .. -DJFC_BUILD_DOCS=OFF -DCMAKE_CXX_FLAGS=" /W4 /EHsc /WX /std:c++17 /permissive-"
+          cmake --build .
+
+    - os: windows
+      name: build windows mingw
+      compiler: mingw64
+      install: choco install mingw
+      script: 
+        - |
+          cd workspace
+          cmake .. -G "MinGW Makefiles" -DJFC_BUILD_DOCS=OFF -DCMAKE_CXX_FLAGS="-pedantic -Wall -Wextra -Ofast -flto -funroll-loops -m64 -march=native" -DCMAKE_SH="CMAKE_SH-NOTFOUND"
+          cmake --build .
+
+    # Documentation 
+    - os: linux
+      name: generate doxygen, upload to gh-pages
+      if: branch = master
+      compiler: gcc
+      addons:
+        apt:
+          packages:
+            - doxygen
+      script:
+        - |
+          cd workspace
+          cmake .. -DJFC_BUILD_DEMO=OFF -DJFC_BUILD_DOCS=ON -DJFC_BUILD_TESTS=OFF
+          mv docs ~
+          REMOTE_URL=$(git config --get remote.origin.url | sed -e "s/^https:\/\///")
+          cd ~
+          git clone --branch=gh-pages "https://${GITHUB_PUBLIC_REPO_TOKEN}@$REMOTE_URL" gh-pages
+          cd gh-pages
+          mv ~/docs/* .
+          git add --all
+          git commit -m "updating docs"
+          git push
+    
+    # Coverage
+    - os: linux
+      name: generate coverage, upload to coveralls
+      if: branch = master
+      compiler: gcc
+      before_install: pip install --user cpp-coveralls
+      script:
+        - |
+          cd workspace
+          cmake .. -DJFC_BUILD_DOCS=OFF -DCMAKE_CXX_FLAGS="-g -O0 -Wall -fprofile-arcs -ftest-coverage"
+          make
+          make test
+          cd ..
+          after_success:
+          - |
+            coveralls --exclude test --exclude workspace/CMakeFiles --exclude cmake --exclude src --gcov-options '\-lp'
+
+before_script: 
+  - |
+    CURRENT_COMMIT_HASH="$(git rev-parse HEAD)"
+
