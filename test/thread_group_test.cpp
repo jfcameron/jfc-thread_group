@@ -4,6 +4,7 @@
 
 #include <jfc/thread_group.h>
 
+#include <atomic>
 #include <thread>
 
 TEST_CASE( "jfc::thread_group test", "[jfc::thread_group]" )

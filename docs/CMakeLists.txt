@@ -11,7 +11,3 @@ jfc_generate_documentation_doxygen(
         ../include/
 )
 
-jfc_generate_readme_md(
-    BRIEF "Task-based concurrency lib. Threadgroup that wraps the \"moody concurrent queue\" lockless queue"
-)
-
