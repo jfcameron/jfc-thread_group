@@ -9,6 +9,24 @@ matrix:
   include:
     # Build scripts
     - os: linux
+      dist: bionic
+      arch: arm64
+      name: build linux gcc
+      compiler: gcc
+      addons:
+        apt:
+          sources:
+            - ubuntu-toolchain-r-test
+          packages:
+            - cmake
+            - git
+      script:
+        - |
+          cd workspace
+          cmake .. -DCMAKE_CXX_FLAGS="-pedantic -Wall -Wextra -Ofast -flto -funroll-loops -m64 -march=native" -DJFC_BUILD_DOCS=OFF
+          make
+          ctest --extra-verbose
+    - os: linux
       name: build linux gcc
       compiler: gcc
       addons:
