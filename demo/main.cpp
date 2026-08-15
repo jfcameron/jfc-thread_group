@@ -5,14 +5,16 @@
 #include <cstdlib>
 #include <iostream>
 #include <sstream>
+#include <stdexcept>
+#include <string>
 #include <unordered_map>
+#include <vector>
 
 using namespace jfc;
 
 std::unordered_map<std::thread::id, size_t> work_log;
 
-void add_to_log(const std::thread::id id)
-{
+void add_to_log(const std::thread::id id) {
     work_log[id] = work_log[id] + 1;
 }
 
@@ -20,9 +22,9 @@ static constexpr size_t TASK_COUNT = 600000;
 
 static constexpr size_t WAIT_TIME = 1000;
 
-/// \brief single thread performing the task TASK_COUNT # of times
-void sequential_impl()
-{
+static constexpr size_t FAILING_TASK_COUNT = 3;
+
+void sequential_impl() {
     std::cout << "sequential work begins...\n";
 
     const auto start_time(std::chrono::steady_clock::now());
@@ -41,22 +43,17 @@ void sequential_impl()
         << "nano seconds taken: " << std::chrono::duration_cast<std::chrono::nanoseconds>(end_time - start_time).count() << "\n";
 }
 
-/// \brief thread_group impl, performing the task TASK_COUNT # of times (plus a few extras). Thread count is specified by the user
-void concurrent_impl(size_t threadCount)
-{
+void concurrent_impl(size_t threadCount) {
     auto task_count = std::make_shared<std::atomic<size_t>>(TASK_COUNT);
     
     thread_group group(threadCount);
    
-    // creating keys for each ID, so we can safey write to the logging map in parallel
     work_log[std::this_thread::get_id()] = 0;
 
-    for (const auto &id : group.thread_ids())
-    {
+    for (const auto &id : group.thread_ids()) {
         work_log[id] = 0;
     }
 
-    // =-=- init -=--=
     std::cout << "init begins...\n";
     
     const auto start_time(std::chrono::steady_clock::now());
@@ -72,13 +69,9 @@ void concurrent_impl(size_t threadCount)
 
     std::cout << "init ends.\n";
 
-    // =-=- do work -=-=
     std::cout << "work begins...\n";
 
-    while (task_count->load(std::memory_order_relaxed) > 0)
-    {
-        if (auto task = group.try_get_task()) (*task)();
-    }
+    while (task_count->load(std::memory_order_relaxed) > 0) group.run_one();
 
     const auto end_time(std::chrono::steady_clock::now());
 
@@ -88,6 +81,49 @@ void concurrent_impl(size_t threadCount)
         << "# of threads in group: " << group.thread_count() << "\n";
 }
 
+void dispatcher_impl(size_t threadCount) {
+    work_log.clear();
+
+    thread_group group(threadCount);
+
+    work_log[std::this_thread::get_id()] = 0;
+
+    for (const auto &id : group.thread_ids()) work_log[id] = 0;
+
+    std::cout << "run_and_wait begins...\n";
+
+    const auto start_time(std::chrono::steady_clock::now());
+
+    std::vector<thread_group::task_type> tasks;
+
+    tasks.reserve(TASK_COUNT + FAILING_TASK_COUNT);
+
+    for (size_t i(0); i < TASK_COUNT; ++i)
+        tasks.push_back([]()
+        {
+            add_to_log(std::this_thread::get_id());
+
+            std::this_thread::sleep_for(std::chrono::nanoseconds(WAIT_TIME));
+        });
+
+    for (size_t i(0); i < FAILING_TASK_COUNT; ++i)
+        tasks.push_back([]() { throw std::runtime_error("this task was always going to fail"); });
+
+    std::string failure = "none";
+
+    try { group.run_and_wait(std::move(tasks)); }
+    catch (const std::exception &e) { failure = e.what(); }
+
+    const auto end_time(std::chrono::steady_clock::now());
+
+    std::cout
+        << "run_and_wait ends.\n"
+        << "nano seconds taken: "
+        << std::chrono::duration_cast<std::chrono::nanoseconds>(end_time - start_time).count() << "\n"
+        << "# of threads in group: " << group.thread_count() << "\n"
+        << "first failure says: " << failure << "\n";
+}
+
 int main(const int argc, const char **argv)
 {
     if (argc != 2) throw std::invalid_argument("program requires 1 arg: number of threads! Special case: 0 indicates sequential implementation. all nonzero values indicate task based concurrent impl, even if only 1 thread is requested\n");
@@ -95,9 +131,12 @@ int main(const int argc, const char **argv)
     auto thread_count = std::stoi(argv[1]);
 
     if (!thread_count) sequential_impl();
-    else concurrent_impl(std::stoi(argv[1]) - 1);
+    else
+    {
+        concurrent_impl(thread_count - 1);
+        dispatcher_impl(thread_count - 1);
+    }
 
-    // =-=- print stats -=-=
     size_t totalTaskCount(0);
 
     for (const auto &i : work_log) 

@@ -1,78 +1,140 @@
 #ifndef JFC_THREAD_GROUP_H
 #define JFC_THREAD_GROUP_H
 
-#include <algorithm>
+#include <chrono>
+#include <cstddef>
+#include <exception>
 #include <functional>
-#include <optional>
+#include <mutex>
+#include <memory>
 #include <thread>
 #include <vector>
 
 namespace jfc
 {
+    /// \brief where exceptions thrown by tasks given to add_tasks are put
+    /// \warning failures are silent until somebody looks.
+    /// \remark thread safe. The mutex is only touched when a task actually throws
+    class failed_task_collection final
+    {
+        mutable std::mutex m_Mutex;
+
+        std::vector<std::exception_ptr> m_Failures;
+
+        std::size_t m_Capacity;
+
+        std::size_t m_Discarded = 0;
+
+        public:
+            /// \brief record a failure, discarding it if the collection is already full
+            void add(std::exception_ptr aFailure);
+
+            /// \brief remove and return everything collected so far
+            [[nodiscard]] std::vector<std::exception_ptr> take();
+
+            //! how many failures are held, without removing them
+            [[nodiscard]] std::size_t size() const;
+
+            /// \brief how many failures were thrown away because the collection was full
+            [[nodiscard]] std::size_t discarded() const;
+
+            /// \param aCapacity how many failures to hold before discarding further ones
+            explicit failed_task_collection(std::size_t aCapacity = 64);
+    };
+
+    struct thread_group_policy final
+    {
+        /// \brief how long a parked worker waits before looking again
+        const std::chrono::milliseconds PARK_TIMEOUT{100};
+
+        /// \brief how many tasks a worker takes per trip to the queue. More than one is quicker for tasks of tens of
+        /// nanoseconds, but the tasks a worker has taken run one after another on it, and cancel_pending cannot reach them
+        const std::size_t TASKS_PER_DEQUEUE{1};
+
+        /// \brief where exceptions escaping tasks are collected
+        const std::shared_ptr<failed_task_collection> FAILED_TASKS
+            = std::make_shared<failed_task_collection>();
+    };
+
     /// \brief task-based concurrency abstraction.
     /// instantiates a number of threads at construction, provides tasks for them to execute via a synchronized queue.
-    /// \remark all methods are thread friendly
-    /// \remark all const methods are synchronization free
-    /// \remark all mutable methods incur synchronization costs via atomic operations
+    /// \remark every method but the moves and the destructor may be called from any thread at once
     class thread_group final
     {
         public:
             /// \brief alias for task functor
             using task_type = std::function<void()>;
 
-            /// \brief alias for thread collection
-            using thread_collection_type = std::vector<std::thread>;
-
             /// \brief alias for thread id collection
             using thread_id_collection_type = std::vector<std::thread::id>;
 
         private:
             struct shared_data_type;
+
+            [[nodiscard]] static std::shared_ptr<shared_data_type> make_shared_data(std::size_t aWorkerCount,
+                const thread_group_policy &aPolicy);
+
+            /// \brief tell this group's workers to stop and wait for them
+            void stop_and_join();
             
-            /// \brief shared data is stored in a shared_ptr to ensure it lives until the final thread participating in the consumption of the task collection has stopped doing work
-            /// this refers to at least the number of threads in m_Threads, but because the queue is publicly accessible it also refers to external threads executing a functor returned by try_get_task after this thread_group has fallen out of scope
             std::shared_ptr<shared_data_type> m_SharedData; 
-
-            /// \brief the threads in the group
-            thread_collection_type m_Threads;
-
-            /// \brief IDs of all threads contained in the group
+            std::vector<std::thread> m_Threads;
             thread_id_collection_type m_Thread_IDs;
 
         public:
             /// \brief get the number of threads in the group
-            size_t thread_count() const;
+            [[nodiscard]] std::size_t thread_count() const;
 
-            /// brief returns a collection of IDs for the threads in the group
-            thread_id_collection_type thread_ids() const;
+            /// \brief returns a collection of IDs for the threads in the group
+            [[nodiscard]] thread_id_collection_type thread_ids() const;
 
             /// \brief adds a collection of tasks to the task collection
+            /// \throws std::bad_alloc if the queue cannot grow, and the tasks are not added
             void add_tasks(std::vector<task_type> &&tasks);
             /// \overload
             void add_tasks(task_type &&task);
 
-            /// \brief removes and returns a task if the task collection is nonzero.
-            /// this can be called publicly to allow threads outside the threadgroup to help perform its tasks (typically the thread which created the group in the first place)
-            std::optional<task_type> try_get_task();
+            /// \brief run these tasks and return only once every one of them has finished
+            /// \throws the first exception a task of these threw, once every one of them has finished
+            void run_and_wait(std::vector<task_type> &&tasks);
 
-            /// \brief supports move semantics
+            //! \brief one chunk of a fork-join
+            using chunk_type = std::function<void(const std::size_t &aChunkIndex)>;
+
+            /// \overload
+            void run_and_wait(std::size_t aChunkCount, const chunk_type &aChunk);
+
+            /// \brief runs one queued task on the calling thread, if there is one, and says whether there was. Lends a
+            /// thread outside the group to its work. A failure goes to failed_tasks(), or, with none, to the caller
+            bool run_one();
+
+            /// \brief drop every task given to add_tasks that has not started yet, returning how many were dropped. A
+            /// run_and_wait's tasks are left to it
+            std::size_t cancel_pending();
+
+            /// \brief how many tasks have been added and not yet finished: waiting in the queue, or
+            /// running. Zero means every task handed over has run; a page can say it is still
+            /// loading until then, where its workers start only once its main thread is free.
+            [[nodiscard]] std::size_t pending() const;
+
+            /// \brief where exceptions escaping tasks given to add_tasks are collected: the policy's FAILED_TASKS
+            [[nodiscard]] std::shared_ptr<failed_task_collection> failed_tasks() const;
+
+            /// \brief supports move semantics. The group moved from is left with no threads, and still works as one
             thread_group &operator=(thread_group &&b);
-            /// \brief supports move semantics
+            /// \brief supports move semantics. The group moved from is left with no threads, and still works as one
             thread_group(thread_group &&b); 
 
             /// \brief constructs a threadgroup with the specified number of threads.
-            thread_group(size_t threadNumber);
+            /// \throws std::invalid_argument if the policy asks for zero tasks per dequeue
+            thread_group(std::size_t threadNumber, const thread_group_policy &aPolicy = {});
 
             /// \brief construct a thread group of size std::thread::hardware_concurrency() -1
-            ///
-            /// hardware_concurrency is a hint provided by the implementation about the # of threads that can be executed simultaneously on the hardware. The significance of a group of this size is that it represents a group that should be able to
-            /// truly run concurrently on the system. The -1 refers to the thread responsible for creating the group, which cannot be captured by the group ctor, since that thread preceeds construction of the group. 
-            /// If you want the creating thread (-1) to participate in the execution of the thread_group's tasks, call the method "try_get_task" where/whenever appropriate.
-            /// for example, if blocking this thread is acceptable then you could call it in a loop directly after constructing the group and adding a collection of tasks to it.
-            ///
-            /// \warning when calling this ctor, it is possible for the resulting group to contain no threads. This will happen if your platform does not support multithreading. 
-            /// In this case tasks can only be done via try_get_task. This can be checked via the method thread_count or the STL function thread::hardware_concurrency
             thread_group();
+
+            /// \overload
+            /// \brief a group of the same default size, with a policy of the caller's choosing
+            explicit thread_group(const thread_group_policy &aPolicy);
 
             ~thread_group();
     };
