@@ -28,9 +28,9 @@ jfc_project(library
 
 if(CMAKE_SYSTEM_NAME MATCHES "Linux")
     find_package(Threads REQUIRED)
-    
-    set("jfc-thread_group_LIBRARIES" 
-        "${jfc-thread_group_LIBRARIES};${CMAKE_THREAD_LIBS_INIT}")
+    if(CMAKE_THREAD_LIBS_INIT)
+        list(APPEND "jfc-thread_group_LIBRARIES" "${CMAKE_THREAD_LIBS_INIT}")
+    endif()
 endif()
 
 if (JFC_BUILD_DEMO)
