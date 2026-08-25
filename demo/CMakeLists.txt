@@ -1,10 +1,10 @@
-# © 2018 Joseph Cameron - All Rights Reserved
+# © Joseph Cameron - All Rights Reserved
 
 jfc_project(executable
     NAME "jfc-thread_group-demo"
     VERSION 1.0
     DESCRIPTION "task-based concurrency tool."
-    C++_STANDARD 17
+    C++_STANDARD 20
     C_STANDARD 90
 
     SOURCE_LIST

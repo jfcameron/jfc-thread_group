@@ -1,7 +1,7 @@
-# © 2019 Joseph Cameron - All Rights Reserved
+# © Joseph Cameron - All Rights Reserved
 
 jfc_add_tests(
-    C++_STANDARD 17
+    C++_STANDARD 20
     C_STANDARD 90
 
     TEST_SOURCE_FILES

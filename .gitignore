@@ -1,6 +1,3 @@
-workspace/*
-*.swp
-
 !.keep
-!CMakeLists.txt
-!*.sh
+*.swp
+out/
