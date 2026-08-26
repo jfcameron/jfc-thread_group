@@ -7,6 +7,7 @@ include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/jfc-cmake/jfclib.cmake")
 option(JFC_BUILD_DEMO "Build the demo" ON)
 option(JFC_BUILD_DOCS "Build documentation" ON)
 option(JFC_BUILD_TESTS "Build unit tests" ON)
+option(JFC_BUILD_BENCH "Build the benchmark harness" OFF)
 
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -62,6 +63,10 @@ endif()
 
 if (JFC_BUILD_TESTS)
     add_subdirectory(test)
+endif()
+
+if (JFC_BUILD_BENCH)
+    add_subdirectory(bench)
 endif()
 
 if (JFC_BUILD_DOCS)
