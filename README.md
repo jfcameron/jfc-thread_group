@@ -1,4 +1,4 @@
 # jfc-thread_group
 
-Task-based concurrency lib. Threadgroup that wraps the "moody concurrent queue" lockless queue. c++20 required
+Task-based concurrency lib. Internally uses moody concurrent queue lockless queue. See the bench directory to compare its performance to a more conventional stl based queue. requires c++20
 
