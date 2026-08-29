@@ -2,6 +2,7 @@
 
 #include <moody/blockingconcurrentqueue.h>
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cstddef>
@@ -63,6 +64,23 @@ namespace jfc
 
         std::atomic<bool> m_GroupIsDestroyed = false;
 
+        std::atomic<std::size_t> m_TasksPerDequeue = 0;
+
+        std::size_t m_MaxTasksPerDequeue = 1;
+
+        std::size_t m_WorkerCount = 0;
+
+        [[nodiscard]] std::size_t tasks_per_dequeue()
+        {
+            if (const auto requested = m_TasksPerDequeue.load(std::memory_order_relaxed))
+                return std::min(requested, m_MaxTasksPerDequeue);
+
+            const auto workers = m_WorkerCount ? m_WorkerCount : 1;
+
+            const auto share = m_Tasks.size_approx() / workers;
+
+            return std::clamp<std::size_t>(share, 1, m_MaxTasksPerDequeue);
+        }
     };
 
     size_t thread_group::thread_count() const
@@ -81,7 +99,37 @@ namespace jfc
 
     void thread_group::run_and_wait(std::vector<thread_group::task_type> &&tasks)
     {
+        run_and_wait_at(std::move(tasks), 0);
+    }
+
+    void thread_group::run_and_wait(std::vector<thread_group::task_type> &&tasks,
+        const std::size_t aTasksPerDequeue)
+    {
+        if (!aTasksPerDequeue)
+            throw std::invalid_argument(
+                "jfc::thread_group: run_and_wait's aTasksPerDequeue must be at least 1");
+
+        run_and_wait_at(std::move(tasks), aTasksPerDequeue);
+    }
+
+    void thread_group::run_and_wait_at(std::vector<thread_group::task_type> &&tasks,
+        const std::size_t aTasksPerDequeue)
+    {
         if (tasks.empty()) return;
+
+        const auto previous = m_SharedData->m_TasksPerDequeue.exchange(aTasksPerDequeue,
+            std::memory_order_relaxed);
+
+        const struct restore_on_exit final
+        {
+            const std::shared_ptr<shared_data_type> &shared;
+            const std::size_t previous;
+
+            ~restore_on_exit()
+            {
+                shared->m_TasksPerDequeue.store(previous, std::memory_order_relaxed);
+            }
+        } restore{m_SharedData, previous};
 
         const auto remaining = std::make_shared<std::atomic<std::size_t>>(tasks.size());
 
@@ -89,21 +137,15 @@ namespace jfc
 
         wrapped.reserve(tasks.size());
 
-        for (auto &task : tasks)
-            wrapped.push_back([task = std::move(task), remaining]()
-            {
-                const struct signal_on_exit final
-                {
-                    const std::shared_ptr<std::atomic<std::size_t>> &count;
+        for (auto &task : tasks) {
+            auto guard = std::shared_ptr<void>(nullptr, [remaining](void *) {
+                if (remaining->fetch_sub(1, std::memory_order_acq_rel) == 1) remaining->notify_all();
+            });
 
-                    ~signal_on_exit()
-                    {
-                        if (count->fetch_sub(1, std::memory_order_acq_rel) == 1) count->notify_all();
-                    }
-                } signal{remaining};
-
+            wrapped.push_back([task = std::move(task), guard = std::move(guard)]() {
                 task();
             });
+        }
 
         add_tasks(std::move(wrapped));
 
@@ -131,6 +173,26 @@ namespace jfc
 
             remaining->wait(outstanding, std::memory_order_acquire);
         }
+    }
+
+    std::size_t thread_group::cancel_pending()
+    {
+        std::size_t dropped = 0;
+
+        std::vector<thread_group::task_type> block(m_SharedData->m_MaxTasksPerDequeue);
+
+        for (;;)
+        {
+            const auto count = m_SharedData->m_Tasks.try_dequeue_bulk(block.begin(), block.size());
+
+            if (!count) break;
+
+            for (std::size_t i = 0; i < count; ++i) block[i] = nullptr;
+
+            dropped += count;
+        }
+
+        return dropped;
     }
 
     std::optional<thread_group::task_type> thread_group::try_get_task()
@@ -195,6 +257,9 @@ namespace jfc
         auto shared = m_SharedData;   
 
         const auto tasksPerDequeue = aPolicy.TASKS_PER_DEQUEUE;
+
+        m_SharedData->m_MaxTasksPerDequeue = tasksPerDequeue;
+        m_SharedData->m_WorkerCount = threadNumber;
         const auto parkTimeout = aPolicy.PARK_TIMEOUT;
         const auto failures = aPolicy.FAILED_TASKS;
 
@@ -210,14 +275,16 @@ namespace jfc
 
                     for (;;)
                     {
-                        auto count = shared->m_Tasks.try_dequeue_bulk(block.begin(), tasksPerDequeue);
+                        const auto want = shared->tasks_per_dequeue();
+
+                        auto count = shared->m_Tasks.try_dequeue_bulk(block.begin(), want);
 
                         if (!count)
                         {
                             if (shared->m_GroupIsDestroyed.load(std::memory_order_relaxed)) break;
 
                             count = shared->m_Tasks.wait_dequeue_bulk_timed(block.begin(),
-                                tasksPerDequeue, parkTimeout);
+                                want, parkTimeout);
 
                             if (!count) continue; 
                         }

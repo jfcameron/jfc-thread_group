@@ -105,10 +105,21 @@ namespace jfc
             /// \brief run these tasks and return only once every one of them has finished
             void run_and_wait(std::vector<task_type> &&tasks);
 
+            /// \brief run every task, taking aTasksPerDequeue of them at a time
+            void run_and_wait(std::vector<task_type> &&tasks, std::size_t aTasksPerDequeue);
+
             /// \brief removes and returns a task if the task collection is nonzero.
             /// Use this to do task work from threads outside the group (typically this is the thread that created the group in the first place)
             std::optional<task_type> try_get_task();
 
+            /// \brief drop every task that has not started yet, returning how many were dropped
+            std::size_t cancel_pending();
+
+        private:
+            //! both run_and_wait forms, which differ only in what they ask the workers for
+            void run_and_wait_at(std::vector<task_type> &&tasks, std::size_t aTasksPerDequeue);
+
+        public:
             /// \brief supports move semantics
             thread_group &operator=(thread_group &&b);
             /// \brief supports move semantics

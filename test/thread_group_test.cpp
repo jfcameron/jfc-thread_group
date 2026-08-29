@@ -5,6 +5,9 @@
 #include <jfc/thread_group.h>
 
 #include <atomic>
+#include <vector>
+#include <stdexcept>
+#include <chrono>
 #include <thread>
 
 TEST_CASE( "jfc::thread_group test", "[jfc::thread_group]" )
@@ -257,3 +260,160 @@ TEST_CASE( "jfc::thread_group test", "[jfc::thread_group]" )
     }
 }
 
+
+namespace {
+    constexpr std::size_t WORKERS = 4;
+    constexpr std::size_t TASKS = WORKERS + 1;
+    constexpr auto TASK_DURATION = std::chrono::milliseconds(40);
+}
+
+TEST_CASE( "jfc::thread_group dequeue granularity", "[jfc::thread_group]" )
+{
+    const auto sleeping_tasks = [](std::atomic<std::size_t> &aRan) {
+        std::vector<jfc::thread_group::task_type> tasks;
+
+        for (std::size_t i = 0; i < TASKS; ++i)
+            tasks.push_back([&aRan] {
+                std::this_thread::sleep_for(TASK_DURATION);
+
+                aRan.fetch_add(1, std::memory_order_relaxed);
+            });
+
+        return tasks;
+    };
+
+    const auto time_taken = [](auto &&aWork) {
+        const auto began = std::chrono::steady_clock::now();
+
+        aWork();
+
+        return std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now() - began);
+    };
+
+    SECTION("a batch no wider than the group is spread across it, not swallowed by one worker")
+    {
+        jfc::thread_group group(WORKERS);
+
+        std::atomic<std::size_t> ran = 0;
+
+        const auto elapsed = time_taken([&] { group.run_and_wait(sleeping_tasks(ran)); });
+
+        REQUIRE(ran.load() == TASKS);
+
+        INFO("took " << elapsed.count() << " ms where serial would be "
+            << (TASK_DURATION * TASKS).count() << " ms");
+
+        REQUIRE(elapsed < TASK_DURATION * TASKS / 2);
+    }
+
+    SECTION("asking for one at a time explicitly does the same")
+    {
+        jfc::thread_group group(WORKERS);
+
+        std::atomic<std::size_t> ran = 0;
+
+        const auto elapsed = time_taken([&] { group.run_and_wait(sleeping_tasks(ran), 1); });
+
+        REQUIRE(ran.load() == TASKS);
+        REQUIRE(elapsed < TASK_DURATION * TASKS / 2);
+    }
+
+    SECTION("a block larger than the policy allows is capped, not honoured")
+    {
+        jfc::thread_group group(WORKERS, jfc::thread_group_policy{std::chrono::milliseconds{100}, 2});
+
+        std::atomic<std::size_t> ran = 0;
+
+        group.run_and_wait(sleeping_tasks(ran), 64);
+
+        REQUIRE(ran.load() == TASKS);
+    }
+
+    SECTION("many small tasks still all run")
+    {
+        jfc::thread_group group(WORKERS);
+
+        std::atomic<std::size_t> ran = 0;
+
+        std::vector<jfc::thread_group::task_type> tasks;
+
+        for (std::size_t i = 0; i < 10000; ++i)
+            tasks.push_back([&ran] { ran.fetch_add(1, std::memory_order_relaxed); });
+
+        group.run_and_wait(std::move(tasks));
+
+        REQUIRE(ran.load() == 10000);
+    }
+
+    SECTION("asking for a block of zero is rejected")
+    {
+        jfc::thread_group group(WORKERS);
+
+        std::vector<jfc::thread_group::task_type> tasks{[] {}};
+
+        REQUIRE_THROWS_AS(group.run_and_wait(std::move(tasks), 0), std::invalid_argument);
+    }
+}
+
+TEST_CASE( "jfc::thread_group cancel_pending", "[jfc::thread_group]" )
+{
+    SECTION("with no workers to run them, every queued task is dropped")
+    {
+        jfc::thread_group group(0);
+
+        std::atomic<std::size_t> ran = 0;
+
+        std::vector<jfc::thread_group::task_type> tasks;
+
+        for (std::size_t i = 0; i < 500; ++i)
+            tasks.push_back([&ran] { ran.fetch_add(1, std::memory_order_relaxed); });
+
+        group.add_tasks(std::move(tasks));
+
+        REQUIRE(group.cancel_pending() == 500);
+        REQUIRE(ran.load() == 0);
+        REQUIRE(group.cancel_pending() == 0);
+    }
+
+    SECTION("cancelling does not strand a run_and_wait on work that will never run")
+    {
+        constexpr std::size_t TOTAL = 200;
+
+        jfc::thread_group group(1);
+
+        std::atomic<bool> go = false;
+        std::atomic<std::size_t> ran = 0;
+        std::atomic<bool> finished = false;
+
+        std::vector<jfc::thread_group::task_type> tasks;
+
+        for (std::size_t i = 0; i < TOTAL; ++i)
+            tasks.push_back([&go, &ran] {
+                while (!go.load(std::memory_order_relaxed))
+                    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+
+                ran.fetch_add(1, std::memory_order_relaxed);
+            });
+
+        std::thread runner([&] { group.run_and_wait(std::move(tasks)); finished = true; });
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+
+        const auto dropped = group.cancel_pending();
+
+        go = true;
+
+        for (int i = 0; i < 500 && !finished.load(); ++i)
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+
+        REQUIRE(finished.load());
+
+        runner.join();
+
+        INFO("dropped " << dropped << " and ran " << ran.load());
+
+        REQUIRE(dropped > 0);
+        REQUIRE(ran.load() + dropped == TOTAL);
+    }
+}
