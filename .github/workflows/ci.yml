@@ -1,0 +1,64 @@
+# © Joseph Cameron - All Rights Reserved
+name: ci
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: ${{ matrix.compiler }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - compiler: gcc
+            cc: gcc
+            cxx: g++
+          - compiler: clang
+            cc: clang
+            cxx: clang++
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: configure
+        run: |
+          cmake -S . -B out/build/${{ matrix.compiler }} \
+            -DCMAKE_C_COMPILER=${{ matrix.cc }} \
+            -DCMAKE_CXX_COMPILER=${{ matrix.cxx }} \
+            -DJFC_BUILD_TESTS=ON \
+            -DJFC_BUILD_DOCS=OFF \
+            -DJFC_BUILD_DEMO=OFF
+
+      - name: build
+        run: cmake --build out/build/${{ matrix.compiler }} -j
+
+      - name: test
+        run: ctest --test-dir out/build/${{ matrix.compiler }} --output-on-failure
+
+  docs:
+    name: docs (doxygen)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y doxygen
+
+      - name: generate documentation
+        run: |
+          cmake -S . -B out/build/docs \
+            -DJFC_BUILD_DOCS=ON \
+            -DJFC_BUILD_TESTS=OFF \
+            -DJFC_BUILD_DEMO=OFF

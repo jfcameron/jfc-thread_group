@@ -15,7 +15,7 @@
 namespace jfc
 {
     /// \brief where exceptions thrown by tasks are put
-    /// \warn Failures are silent until somebody looks.
+    /// \warning Failures are silent until somebody looks.
     /// \remark thread safe. The mutex is only touched when a task actually throws, so it costs
     /// nothing on the path where they do not.
     class failed_task_collection final
@@ -67,11 +67,6 @@ namespace jfc
     {
         public:
             /// \brief alias for task functor
-            /// \remark an exception escaping a task is caught and collected, not propagated:
-            /// a worker is not the thread that submitted the task and has nobody to throw to.
-            /// \see thread_group_policy::FAILED_TASKS, which is where it goes and how to read it
-            /// back, and which can be set to null to make a throwing task terminate the process
-            /// instead.
             using task_type = std::function<void()>;
 
             /// \brief alias for thread collection
@@ -132,7 +127,8 @@ namespace jfc
             /// \brief construct a thread group of size std::thread::hardware_concurrency() -1
             thread_group();
 
-            //! \overload a group of the same default size, with a policy of the caller's choosing
+            /// \overload
+            /// \brief a group of the same default size, with a policy of the caller's choosing
             explicit thread_group(const thread_group_policy &aPolicy);
 
             ~thread_group();

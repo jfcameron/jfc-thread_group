@@ -7,10 +7,6 @@ jfc_add_tests(
     TEST_SOURCE_FILES
         "${CMAKE_CURRENT_LIST_DIR}/thread_group_test.cpp"
 
-    INCLUDE_DIRECTORIES
-        "${${PROJECT_NAME}_INCLUDE_DIRECTORIES}"
-
     LIBRARIES
-            "${${PROJECT_NAME}_LIBRARIES}"
+        jfc-thread_group
 )
-

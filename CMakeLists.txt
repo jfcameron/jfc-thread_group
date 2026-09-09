@@ -1,6 +1,11 @@
 # © Joseph Cameron - All Rights Reserved
 
-cmake_minimum_required(VERSION 3.9 FATAL_ERROR)
+cmake_minimum_required(VERSION 3.21 FATAL_ERROR)
+
+project(jfc-thread_group
+    VERSION 1.0
+    DESCRIPTION "Tool for task-based concurrent programming: a thread group built around the lockless queue, moody concurrent queue project."
+    LANGUAGES CXX)
 
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/jfc-cmake/jfclib.cmake")
 
@@ -32,30 +37,70 @@ else()
     endforeach()
 endif()
 
-jfc_project(library
-    NAME "jfc-thread_group"
-    VERSION 1.0
-    DESCRIPTION "Tool for task-based concurrent programming: a thread group built around the lockless queue, moody concurrent queue project."
-    C++_STANDARD 20
-    C_STANDARD 90
-    TYPE STATIC
+find_package(Threads REQUIRED)
 
-    PUBLIC_INCLUDE_DIRECTORIES
-        ${CMAKE_CURRENT_SOURCE_DIR}/include
+add_library(jfc-thread_group STATIC
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/thread_group.cpp")
 
-    PRIVATE_INCLUDE_DIRECTORIES
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/include
+add_library(jfc::thread_group ALIAS jfc-thread_group)
 
-    SOURCE_LIST
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/thread_group.cpp
-)
+set_target_properties(jfc-thread_group PROPERTIES EXPORT_NAME thread_group)
 
-if(CMAKE_SYSTEM_NAME MATCHES "Linux")
-    find_package(Threads REQUIRED)
-    if(CMAKE_THREAD_LIBS_INIT)
-        list(APPEND "jfc-thread_group_LIBRARIES" "${CMAKE_THREAD_LIBS_INIT}")
-    endif()
-endif()
+target_include_directories(jfc-thread_group
+    PUBLIC
+        "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
+        "$<INSTALL_INTERFACE:include>"
+    PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/include")
+
+target_compile_features(jfc-thread_group PUBLIC cxx_std_20)
+
+target_link_libraries(jfc-thread_group PUBLIC Threads::Threads)
+
+set(jfc-thread_group_INCLUDE_DIRECTORIES
+    "${CMAKE_CURRENT_SOURCE_DIR}/include"
+    CACHE PATH "deprecated: link the jfc-thread_group target instead" FORCE)
+
+set(jfc-thread_group_LIBRARIES
+    "${CMAKE_CURRENT_BINARY_DIR}/${CMAKE_STATIC_LIBRARY_PREFIX}jfc-thread_group${CMAKE_STATIC_LIBRARY_SUFFIX}"
+    ${CMAKE_THREAD_LIBS_INIT}
+    CACHE PATH "deprecated: link the jfc-thread_group target instead" FORCE)
+
+add_custom_command(TARGET jfc-thread_group POST_BUILD
+    COMMAND "${CMAKE_COMMAND}" -E copy
+        "$<TARGET_FILE:jfc-thread_group>"
+        "${CMAKE_CURRENT_BINARY_DIR}/$<TARGET_FILE_NAME:jfc-thread_group>")
+
+include(GNUInstallDirs)
+include(CMakePackageConfigHelpers)
+
+install(TARGETS jfc-thread_group
+    EXPORT jfc-thread_group-targets
+    ARCHIVE DESTINATION "${CMAKE_INSTALL_LIBDIR}")
+
+install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/include/"
+    DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}")
+
+install(EXPORT jfc-thread_group-targets
+    FILE jfc-thread_group-targets.cmake
+    NAMESPACE jfc::
+    DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/jfc-thread_group")
+
+write_basic_package_version_file(
+    "${CMAKE_CURRENT_BINARY_DIR}/jfc-thread_group-config-version.cmake"
+    VERSION ${PROJECT_VERSION}
+    COMPATIBILITY SameMajorVersion)
+
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/jfc-thread_group-config.cmake"
+"include(CMakeFindDependencyMacro)
+find_dependency(Threads)
+include(\"\${CMAKE_CURRENT_LIST_DIR}/jfc-thread_group-targets.cmake\")
+")
+
+install(FILES
+    "${CMAKE_CURRENT_BINARY_DIR}/jfc-thread_group-config.cmake"
+    "${CMAKE_CURRENT_BINARY_DIR}/jfc-thread_group-config-version.cmake"
+    DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/jfc-thread_group")
 
 if (JFC_BUILD_DEMO)
     add_subdirectory(demo)
@@ -72,4 +117,3 @@ endif()
 if (JFC_BUILD_DOCS)
     add_subdirectory(docs)
 endif()
-
