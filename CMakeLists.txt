@@ -57,20 +57,6 @@ target_compile_features(jfc-thread_group PUBLIC cxx_std_20)
 
 target_link_libraries(jfc-thread_group PUBLIC Threads::Threads)
 
-set(jfc-thread_group_INCLUDE_DIRECTORIES
-    "${CMAKE_CURRENT_SOURCE_DIR}/include"
-    CACHE PATH "deprecated: link the jfc-thread_group target instead" FORCE)
-
-set(jfc-thread_group_LIBRARIES
-    "${CMAKE_CURRENT_BINARY_DIR}/${CMAKE_STATIC_LIBRARY_PREFIX}jfc-thread_group${CMAKE_STATIC_LIBRARY_SUFFIX}"
-    ${CMAKE_THREAD_LIBS_INIT}
-    CACHE PATH "deprecated: link the jfc-thread_group target instead" FORCE)
-
-add_custom_command(TARGET jfc-thread_group POST_BUILD
-    COMMAND "${CMAKE_COMMAND}" -E copy
-        "$<TARGET_FILE:jfc-thread_group>"
-        "${CMAKE_CURRENT_BINARY_DIR}/$<TARGET_FILE_NAME:jfc-thread_group>")
-
 include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
 
