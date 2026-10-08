@@ -417,3 +417,88 @@ TEST_CASE( "jfc::thread_group cancel_pending", "[jfc::thread_group]" )
         REQUIRE(ran.load() + dropped == TOTAL);
     }
 }
+
+TEST_CASE( "jfc::thread_group run_and_wait waits on its own batch alone", "[jfc::thread_group]" )
+{
+    using namespace std::chrono_literals;
+
+    constexpr auto LONG = 150ms;
+    constexpr std::size_t HANDED = 3;
+
+    jfc::thread_group group(1, jfc::thread_group_policy{std::chrono::milliseconds{100}, 1});
+
+    const auto caller = std::this_thread::get_id();
+
+    std::atomic<std::size_t> handedRan = 0;
+    std::atomic<bool> handedOnCaller = false;
+    std::atomic<bool> started = false;
+
+    std::vector<jfc::thread_group::task_type> handed;
+
+    for (std::size_t i = 0; i < HANDED; ++i)
+        handed.push_back([&, caller] {
+            started = true;
+
+            if (std::this_thread::get_id() == caller) handedOnCaller = true;
+
+            std::this_thread::sleep_for(LONG);
+
+            handedRan.fetch_add(1);
+        });
+
+    group.add_tasks(std::move(handed));
+
+    while (!started.load()) std::this_thread::sleep_for(1ms);
+
+    std::atomic<std::size_t> batchRan = 0;
+
+    std::vector<jfc::thread_group::task_type> batch;
+
+    for (std::size_t i = 0; i < 20; ++i)
+        batch.push_back([&batchRan] { batchRan.fetch_add(1); });
+
+    const auto began = std::chrono::steady_clock::now();
+
+    group.run_and_wait(std::move(batch));
+
+    const auto took = std::chrono::steady_clock::now() - began;
+
+    SECTION("the batch is done, and soon: not after the long work queued ahead of it")
+    {
+        REQUIRE(batchRan.load() == 20);
+
+        INFO("took " << std::chrono::duration_cast<std::chrono::milliseconds>(took).count() << " ms");
+
+        REQUIRE(took < LONG);
+    }
+
+    SECTION("the caller ran none of the long work")
+    {
+        REQUIRE_FALSE(handedOnCaller.load());
+    }
+
+    for (int i = 0; i < 400 && handedRan.load() < HANDED; ++i) std::this_thread::sleep_for(5ms);
+
+    REQUIRE(handedRan.load() == HANDED);
+    REQUIRE_FALSE(handedOnCaller.load());
+}
+
+TEST_CASE( "jfc::thread_group runs a fork-join's chunks by index", "[jfc::thread_group]" )
+{
+    jfc::thread_group group(3);
+
+    std::vector<std::atomic<int>> ran(200);
+
+    group.run_and_wait(ran.size(), [&ran](const std::size_t &aIndex) { ran[aIndex].fetch_add(1); });
+
+    std::size_t once = 0;
+
+    for (const auto &each : ran) if (each.load() == 1) ++once;
+
+    REQUIRE(once == ran.size());
+
+    SECTION("none at all is a no-op")
+    {
+        REQUIRE_NOTHROW(group.run_and_wait(0, [](const std::size_t &) { FAIL("ran a chunk of none"); }));
+    }
+}

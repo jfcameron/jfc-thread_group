@@ -102,6 +102,17 @@ namespace jfc
         run_and_wait_at(std::move(tasks), 0);
     }
 
+    void thread_group::run_and_wait(const std::size_t aChunkCount, const chunk_type &aChunk)
+    {
+        std::vector<thread_group::task_type> tasks;
+
+        tasks.reserve(aChunkCount);
+
+        for (std::size_t i = 0; i < aChunkCount; ++i) tasks.push_back([&aChunk, i] { aChunk(i); });
+
+        run_and_wait_at(std::move(tasks), 0);
+    }
+
     void thread_group::run_and_wait(std::vector<thread_group::task_type> &&tasks,
         const std::size_t aTasksPerDequeue)
     {
@@ -110,6 +121,74 @@ namespace jfc
                 "jfc::thread_group: run_and_wait's aTasksPerDequeue must be at least 1");
 
         run_and_wait_at(std::move(tasks), aTasksPerDequeue);
+    }
+
+    namespace
+    {
+        struct batch final
+        {
+            std::vector<thread_group::task_type> tasks;
+
+            std::atomic<std::size_t> next = 0;
+
+            std::atomic<std::size_t> remaining = 0;
+
+            std::shared_ptr<failed_task_collection> failures;
+
+            [[nodiscard]] thread_group::task_type *take()
+            {
+                const auto at = next.fetch_add(1, std::memory_order_relaxed);
+
+                return at < tasks.size() ? &tasks[at] : nullptr;
+            }
+
+            void finished(thread_group::task_type &aTask)
+            {
+                aTask = nullptr;
+
+                if (remaining.fetch_sub(1, std::memory_order_acq_rel) == 1) remaining.notify_all();
+            }
+        };
+
+        struct claim final
+        {
+            std::shared_ptr<batch> of;
+
+            void operator()() const
+            {
+                auto *const pTask = of->take();
+
+                if (!pTask) return;
+
+                try
+                {
+                    (*pTask)();
+                }
+                catch (...)
+                {
+                    if (of->failures) of->failures->add(std::current_exception());
+
+                    of->finished(*pTask);
+
+                    if (!of->failures) throw;
+
+                    return;
+                }
+
+                of->finished(*pTask);
+            }
+
+            [[nodiscard]] std::size_t cancel() const
+            {
+                auto *const pTask = of->take();
+
+                if (!pTask) return 0;
+
+                of->finished(*pTask);
+
+                return 1;
+            }
+        };
     }
 
     void thread_group::run_and_wait_at(std::vector<thread_group::task_type> &&tasks,
@@ -131,48 +210,42 @@ namespace jfc
             }
         } restore{m_SharedData, previous};
 
-        const auto remaining = std::make_shared<std::atomic<std::size_t>>(tasks.size());
+        const auto pBatch = std::make_shared<batch>();
 
-        std::vector<thread_group::task_type> wrapped;
+        pBatch->tasks = std::move(tasks);
+        pBatch->remaining.store(pBatch->tasks.size(), std::memory_order_relaxed);
+        pBatch->failures = m_SharedData->m_Failures;
 
-        wrapped.reserve(tasks.size());
+        if (!m_Threads.empty())
+        {
+            std::vector<thread_group::task_type> claims(pBatch->tasks.size(), claim{pBatch});
 
-        for (auto &task : tasks) {
-            auto guard = std::shared_ptr<void>(nullptr, [remaining](void *) {
-                if (remaining->fetch_sub(1, std::memory_order_acq_rel) == 1) remaining->notify_all();
-            });
-
-            wrapped.push_back([task = std::move(task), guard = std::move(guard)]() {
-                task();
-            });
+            add_tasks(std::move(claims));
         }
 
-        add_tasks(std::move(wrapped));
-
-        for (;;)
+        while (auto *const pTask = pBatch->take())
         {
-            const auto outstanding = remaining->load(std::memory_order_acquire);
-
-            if (!outstanding) break;
-
-            if (auto task = try_get_task())
+            try
             {
-                try
-                {
-                    (*task)();
-                }
-                catch (...)
-                {
-                    if (!m_SharedData->m_Failures) throw;
+                (*pTask)();
+            }
+            catch (...)
+            {
+                pBatch->finished(*pTask);
 
-                    m_SharedData->m_Failures->add(std::current_exception());
-                }
+                if (!m_SharedData->m_Failures) throw;
+
+                m_SharedData->m_Failures->add(std::current_exception());
 
                 continue;
             }
 
-            remaining->wait(outstanding, std::memory_order_acquire);
+            pBatch->finished(*pTask);
         }
+
+        for (auto outstanding = pBatch->remaining.load(std::memory_order_acquire); outstanding;
+            outstanding = pBatch->remaining.load(std::memory_order_acquire))
+            pBatch->remaining.wait(outstanding, std::memory_order_acquire);
     }
 
     std::size_t thread_group::cancel_pending()
@@ -187,9 +260,13 @@ namespace jfc
 
             if (!count) break;
 
-            for (std::size_t i = 0; i < count; ++i) block[i] = nullptr;
+            for (std::size_t i = 0; i < count; ++i)
+            {
+                if (const auto *const pClaim = block[i].target<claim>()) dropped += pClaim->cancel();
+                else ++dropped;
 
-            dropped += count;
+                block[i] = nullptr;
+            }
         }
 
         return dropped;

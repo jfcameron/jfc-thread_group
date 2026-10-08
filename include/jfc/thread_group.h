@@ -103,6 +103,11 @@ namespace jfc
             /// \brief run every task, taking aTasksPerDequeue of them at a time
             void run_and_wait(std::vector<task_type> &&tasks, std::size_t aTasksPerDequeue);
 
+            //! \brief one chunk of a fork-join
+            using chunk_type = std::function<void(const std::size_t &aChunkIndex)>;
+
+            void run_and_wait(std::size_t aChunkCount, const chunk_type &aChunk);
+
             /// \brief removes and returns a task if the task collection is nonzero.
             /// Use this to do task work from threads outside the group (typically this is the thread that created the group in the first place)
             std::optional<task_type> try_get_task();
