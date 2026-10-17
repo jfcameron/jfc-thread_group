@@ -502,3 +502,78 @@ TEST_CASE( "jfc::thread_group runs a fork-join's chunks by index", "[jfc::thread
         REQUIRE_NOTHROW(group.run_and_wait(0, [](const std::size_t &) { FAIL("ran a chunk of none"); }));
     }
 }
+
+TEST_CASE("a group says how many tasks are pending", "[jfc::thread_group][pending]")
+{
+    jfc::thread_group group(2);
+
+    REQUIRE(group.pending() == 0);
+
+    SECTION("counted up as tasks go in, and down as each finishes")
+    {
+        std::atomic<bool> release{false};
+        std::atomic<int> finished{0};
+
+        const auto wait_then_count = [&release, &finished]()
+        {
+            while (!release.load(std::memory_order_acquire)) std::this_thread::yield();
+
+            finished.fetch_add(1, std::memory_order_relaxed);
+        };
+
+        group.add_tasks({wait_then_count, wait_then_count, wait_then_count});
+        group.add_tasks(wait_then_count);
+
+        REQUIRE(group.pending() == 4);
+
+        release.store(true, std::memory_order_release);
+
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+
+        while (group.pending() && std::chrono::steady_clock::now() < deadline)
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+
+        REQUIRE(group.pending() == 0);
+        REQUIRE(finished.load() == 4);
+    }
+
+    SECTION("a task run outside the group counts off once it has run")
+    {
+        group.add_tasks([]{});
+
+        REQUIRE(group.pending() == 1);
+
+        auto task = group.try_get_task();
+
+        REQUIRE(task);
+        REQUIRE(group.pending() == 1);
+
+        (*task)();
+
+        REQUIRE(group.pending() == 0);
+    }
+
+    SECTION("a task that throws counts off too")
+    {
+        group.add_tasks([]{ throw std::runtime_error("in a task"); });
+
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+
+        while (group.pending() && std::chrono::steady_clock::now() < deadline)
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+
+        REQUIRE(group.pending() == 0);
+    }
+
+    SECTION("cancelled tasks count off")
+    {
+        jfc::thread_group idle(0);
+
+        idle.add_tasks({[]{}, []{}, []{}});
+
+        REQUIRE(idle.pending() == 3);
+        REQUIRE(idle.cancel_pending() == 3);
+        REQUIRE(idle.pending() == 0);
+    }
+}
+

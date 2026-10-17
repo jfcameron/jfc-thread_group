@@ -115,6 +115,11 @@ namespace jfc
             /// \brief drop every task that has not started yet, returning how many were dropped
             std::size_t cancel_pending();
 
+            /// \brief how many tasks have been added and not yet finished: waiting in the queue, or
+            /// running. Zero means every task handed over has run; a page can say it is still
+            /// loading until then, where its workers start only once its main thread is free.
+            [[nodiscard]] std::size_t pending() const;
+
         private:
             //! both run_and_wait forms, which differ only in what they ask the workers for
             void run_and_wait_at(std::vector<task_type> &&tasks, std::size_t aTasksPerDequeue);

@@ -66,6 +66,9 @@ namespace jfc
 
         std::atomic<std::size_t> m_TasksPerDequeue = 0;
 
+        //! added and not finished: counted up as tasks go in, down as each returns or is dropped
+        std::atomic<std::size_t> m_Pending = 0;
+
         std::size_t m_MaxTasksPerDequeue = 1;
 
         std::size_t m_WorkerCount = 0;
@@ -90,11 +93,20 @@ namespace jfc
     
     void thread_group::add_tasks(std::vector<thread_group::task_type> &&tasks)
     {
+        m_SharedData->m_Pending.fetch_add(tasks.size(), std::memory_order_acq_rel);
+
         m_SharedData->m_Tasks.enqueue_bulk(std::make_move_iterator(tasks.begin()), tasks.size());
     }
     void thread_group::add_tasks(thread_group::task_type &&task)
     {
+        m_SharedData->m_Pending.fetch_add(1, std::memory_order_acq_rel);
+
         m_SharedData->m_Tasks.enqueue(std::move(task));
+    }
+
+    std::size_t thread_group::pending() const
+    {
+        return m_SharedData->m_Pending.load(std::memory_order_acquire);
     }
 
     void thread_group::run_and_wait(std::vector<thread_group::task_type> &&tasks)
@@ -267,6 +279,8 @@ namespace jfc
 
                 block[i] = nullptr;
             }
+
+            m_SharedData->m_Pending.fetch_sub(count, std::memory_order_acq_rel);
         }
 
         return dropped;
@@ -276,9 +290,20 @@ namespace jfc
     {
         thread_group::task_type task;
 
-        if (m_SharedData->m_Tasks.try_dequeue(task)) return task;
+        if (!m_SharedData->m_Tasks.try_dequeue(task)) return {};
 
-        return {};
+        // finished once whoever took it has run it, however that goes
+        return thread_group::task_type([shared = m_SharedData, task = std::move(task)]()
+        {
+            struct done final
+            {
+                const std::shared_ptr<shared_data_type> &shared;
+
+                ~done() { shared->m_Pending.fetch_sub(1, std::memory_order_acq_rel); }
+            } finished{shared};
+
+            task();
+        });
     }
 
     thread_group::thread_id_collection_type thread_group::thread_ids() const
@@ -292,8 +317,8 @@ namespace jfc
 
         m_SharedData->m_GroupIsDestroyed = true;
 
-        for (std::size_t i = 0; i < m_Threads.size(); ++i)
-            m_SharedData->m_Tasks.enqueue([]{});
+        // through add_tasks, so each is counted and then, run by the worker it wakes, counted off
+        for (std::size_t i = 0; i < m_Threads.size(); ++i) add_tasks([]{});
 
         for (auto &current_thread : m_Threads) current_thread.join();
 
@@ -374,12 +399,20 @@ namespace jfc
                             }
                             catch (...)
                             {
+                                block[k] = nullptr;
+
+                                shared->m_Pending.fetch_sub(1, std::memory_order_acq_rel);
+
                                 if (!failures) throw;
 
                                 failures->add(std::current_exception());
+
+                                continue;
                             }
 
                             block[k] = nullptr;
+
+                            shared->m_Pending.fetch_sub(1, std::memory_order_acq_rel);
                         }
                     }
                 }));
