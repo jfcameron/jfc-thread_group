@@ -1,0 +1,679 @@
+{
+  "version": 3,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 21,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "binaryDir": "${sourceDir}/out/build/${presetName}",
+      "cacheVariables": {
+        "JFCTHREADGROUP_BUILD_TESTS": "ON",
+        "JFCTHREADGROUP_BUILD_DOCS": "OFF",
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "JFCTHREADGROUP_BUILD_DEMO": "ON",
+        "JFCTHREADGROUP_BUILD_BENCH": "ON"
+      }
+    },
+    {
+      "name": "linux-gcc",
+      "displayName": "Linux / gcc",
+      "inherits": "base",
+      "generator": "Ninja",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Linux"
+      },
+      "cacheVariables": {
+        "CMAKE_CXX_COMPILER": "g++",
+        "CMAKE_CXX_FLAGS": "-Wall -Wextra"
+      }
+    },
+    {
+      "name": "linux-clang",
+      "displayName": "Linux / clang",
+      "inherits": "base",
+      "generator": "Ninja",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Linux"
+      },
+      "cacheVariables": {
+        "CMAKE_CXX_COMPILER": "clang++",
+        "CMAKE_CXX_FLAGS": "-Wall -Wextra"
+      }
+    },
+    {
+      "name": "linux-gcc-ci",
+      "displayName": "Linux / gcc / warnings are errors",
+      "inherits": "linux-gcc",
+      "cacheVariables": {
+        "CMAKE_CXX_FLAGS": "-Wall -Wextra -Werror"
+      }
+    },
+    {
+      "name": "linux-clang-ci",
+      "displayName": "Linux / clang / warnings are errors",
+      "inherits": "linux-clang",
+      "cacheVariables": {
+        "CMAKE_CXX_FLAGS": "-Wall -Wextra -Werror"
+      }
+    },
+    {
+      "name": "linux-clang-asan-ubsan",
+      "displayName": "Linux / clang / address + undefined sanitizers",
+      "inherits": "linux-clang",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "CMAKE_CXX_FLAGS": "-Wall -Wextra -fsanitize=address,undefined -fno-sanitize-recover=undefined -fno-omit-frame-pointer",
+        "CMAKE_EXE_LINKER_FLAGS": "-fsanitize=address,undefined"
+      }
+    },
+    {
+      "name": "linux-clang-tsan",
+      "displayName": "Linux / clang / thread sanitizer",
+      "inherits": "linux-clang",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "CMAKE_CXX_FLAGS": "-Wall -Wextra -fsanitize=thread -fno-omit-frame-pointer",
+        "CMAKE_EXE_LINKER_FLAGS": "-fsanitize=thread"
+      }
+    },
+    {
+      "name": "linux-clang-libcxx",
+      "displayName": "Linux / clang / libc++",
+      "inherits": "linux-clang",
+      "cacheVariables": {
+        "CMAKE_CXX_FLAGS": "-Wall -Wextra -stdlib=libc++",
+        "CMAKE_EXE_LINKER_FLAGS": "-stdlib=libc++"
+      }
+    },
+    {
+      "name": "linux-gcc-x86",
+      "displayName": "Linux / gcc / 32-bit x86",
+      "description": "Needs gcc's 32-bit libraries (g++-multilib).",
+      "inherits": "linux-gcc",
+      "cacheVariables": {
+        "CMAKE_CXX_FLAGS": "-Wall -Wextra -m32",
+        "CMAKE_EXE_LINKER_FLAGS": "-m32"
+      }
+    },
+    {
+      "name": "linux-clang-x86",
+      "displayName": "Linux / clang / 32-bit x86",
+      "description": "Needs gcc's 32-bit libraries (g++-multilib).",
+      "inherits": "linux-clang",
+      "cacheVariables": {
+        "CMAKE_CXX_FLAGS": "-Wall -Wextra -m32",
+        "CMAKE_EXE_LINKER_FLAGS": "-m32"
+      }
+    },
+    {
+      "name": "linux-cross",
+      "hidden": true,
+      "inherits": "base",
+      "generator": "Ninja",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Linux"
+      },
+      "description": "A gcc cross compiler, the tests run under qemu-user. On Debian and Ubuntu: g++-<triple> and qemu-user.",
+      "toolchainFile": "${sourceDir}/cmake/jfc-cmake/toolchains/toolchain-linux-cross.cmake",
+      "cacheVariables": {
+        "CMAKE_CXX_FLAGS": "-Wall -Wextra"
+      }
+    },
+    {
+      "name": "linux-armv7",
+      "displayName": "Linux / gcc / 32-bit ARM (armv7 hard float, qemu)",
+      "inherits": "linux-cross",
+      "cacheVariables": {
+        "JFC_CROSS_TRIPLE": "arm-linux-gnueabihf"
+      }
+    },
+    {
+      "name": "linux-aarch64",
+      "displayName": "Linux / gcc / 64-bit ARM (qemu)",
+      "inherits": "linux-cross",
+      "cacheVariables": {
+        "JFC_CROSS_TRIPLE": "aarch64-linux-gnu"
+      }
+    },
+    {
+      "name": "linux-riscv64",
+      "displayName": "Linux / gcc / RISC-V 64 (qemu)",
+      "inherits": "linux-cross",
+      "cacheVariables": {
+        "JFC_CROSS_TRIPLE": "riscv64-linux-gnu"
+      }
+    },
+    {
+      "name": "linux-ppc64le",
+      "displayName": "Linux / gcc / POWER little endian (qemu)",
+      "inherits": "linux-cross",
+      "cacheVariables": {
+        "JFC_CROSS_TRIPLE": "powerpc64le-linux-gnu"
+      }
+    },
+    {
+      "name": "linux-s390x",
+      "displayName": "Linux / gcc / IBM Z, big endian (qemu)",
+      "inherits": "linux-cross",
+      "cacheVariables": {
+        "JFC_CROSS_TRIPLE": "s390x-linux-gnu"
+      }
+    },
+    {
+      "name": "linux-docs",
+      "displayName": "Linux / documentation",
+      "inherits": "linux-gcc",
+      "cacheVariables": {
+        "JFCTHREADGROUP_BUILD_TESTS": "OFF",
+        "JFCTHREADGROUP_BUILD_DOCS": "ON",
+        "JFCTHREADGROUP_BUILD_DEMO": "OFF",
+        "JFCTHREADGROUP_BUILD_BENCH": "OFF"
+      }
+    },
+    {
+      "name": "macos-clang",
+      "displayName": "macOS / clang",
+      "inherits": "base",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Darwin"
+      },
+      "cacheVariables": {
+        "CMAKE_CXX_FLAGS": "-Wall -Wextra"
+      }
+    },
+    {
+      "name": "ios",
+      "displayName": "iOS / clang (device, compile only)",
+      "inherits": "base",
+      "generator": "Ninja",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Darwin"
+      },
+      "description": "The tests are built but not run: they need a device or a simulator.",
+      "cacheVariables": {
+        "CMAKE_SYSTEM_NAME": "iOS",
+        "CMAKE_OSX_ARCHITECTURES": "arm64",
+        "CMAKE_OSX_SYSROOT": "iphoneos",
+        "CMAKE_CXX_FLAGS": "-Wall -Wextra"
+      }
+    },
+    {
+      "name": "freebsd-clang",
+      "displayName": "FreeBSD / clang",
+      "inherits": "base",
+      "generator": "Ninja",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "FreeBSD"
+      },
+      "cacheVariables": {
+        "CMAKE_CXX_COMPILER": "clang++",
+        "CMAKE_CXX_FLAGS": "-Wall -Wextra"
+      }
+    },
+    {
+      "name": "windows-msvc",
+      "displayName": "Windows / MSVC",
+      "inherits": "base",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      },
+      "cacheVariables": {
+        "CMAKE_CXX_FLAGS": "/W4 /EHsc /permissive- /utf-8"
+      }
+    },
+    {
+      "name": "windows-msvc-ci",
+      "displayName": "Windows / MSVC / warnings are errors",
+      "inherits": "windows-msvc",
+      "cacheVariables": {
+        "CMAKE_CXX_FLAGS": "/W4 /WX /EHsc /permissive- /utf-8"
+      }
+    },
+    {
+      "name": "windows-msvc-x86",
+      "displayName": "Windows / MSVC / 32-bit x86",
+      "inherits": "windows-msvc",
+      "architecture": {
+        "value": "Win32",
+        "strategy": "set"
+      }
+    },
+    {
+      "name": "windows-msvc-arm64",
+      "displayName": "Windows / MSVC / ARM64",
+      "description": "Run on an ARM64 machine to run the tests.",
+      "inherits": "windows-msvc",
+      "architecture": {
+        "value": "ARM64",
+        "strategy": "set"
+      }
+    },
+    {
+      "name": "windows-clang-cl",
+      "displayName": "Windows / clang-cl",
+      "description": "Needs the Visual Studio component \"C++ Clang tools for Windows\".",
+      "inherits": "windows-msvc",
+      "toolset": {
+        "value": "ClangCL",
+        "strategy": "set"
+      }
+    },
+    {
+      "name": "windows-mingw",
+      "displayName": "Windows / MinGW-w64",
+      "description": "Run from an MSYS2 shell; its g++, or clang++ given as CMAKE_CXX_COMPILER.",
+      "inherits": "base",
+      "generator": "Ninja",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      },
+      "cacheVariables": {
+        "CMAKE_CXX_COMPILER": "g++",
+        "CMAKE_CXX_FLAGS": "-Wall -Wextra"
+      }
+    },
+    {
+      "name": "windows-msvc-cross",
+      "displayName": "Windows / MSVC / cross from unix (msvc-wine)",
+      "description": "Cross-compiles the windows leg through msvc-wine; ctest runs the tests under wine. Set MSVC_WINE_ROOT if msvc-wine is not in /opt/msvc.",
+      "inherits": "base",
+      "generator": "Ninja",
+      "toolchainFile": "${sourceDir}/cmake/jfc-cmake/toolchains/toolchain-msvc-wine.cmake",
+      "cacheVariables": {
+        "CMAKE_CXX_FLAGS": "/W4 /EHsc /permissive- /utf-8"
+      }
+    },
+    {
+      "name": "android-arm64",
+      "displayName": "Android / arm64-v8a / NDK clang (compile only)",
+      "description": "Set ANDROID_NDK_HOME to an NDK (r23 or later). The tests are built but not run: they need a device or an emulator.",
+      "inherits": "base",
+      "generator": "Ninja",
+      "toolchainFile": "$env{ANDROID_NDK_HOME}/build/cmake/android.toolchain.cmake",
+      "cacheVariables": {
+        "ANDROID_ABI": "arm64-v8a",
+        "ANDROID_PLATFORM": "android-24",
+        "CMAKE_CXX_FLAGS": "-Wall -Wextra"
+      }
+    },
+    {
+      "name": "android-armv7",
+      "displayName": "Android / armeabi-v7a / NDK clang (compile only)",
+      "inherits": "android-arm64",
+      "cacheVariables": {
+        "ANDROID_ABI": "armeabi-v7a"
+      }
+    },
+    {
+      "name": "android-x86_64",
+      "displayName": "Android / x86_64 / NDK clang (compile only)",
+      "inherits": "android-arm64",
+      "cacheVariables": {
+        "ANDROID_ABI": "x86_64"
+      }
+    },
+    {
+      "name": "android-x86",
+      "displayName": "Android / x86 / NDK clang (compile only)",
+      "inherits": "android-arm64",
+      "cacheVariables": {
+        "ANDROID_ABI": "x86"
+      }
+    },
+    {
+      "name": "emscripten",
+      "displayName": "Emscripten / wasm",
+      "description": "Configure with `emcmake cmake --preset emscripten`, which supplies the toolchain file. Threads are Emscripten's pthreads; ctest runs the tests under node, with main on a thread of its own.",
+      "inherits": "base",
+      "generator": "Ninja",
+      "cacheVariables": {
+        "CMAKE_CXX_FLAGS": "-pthread -fexceptions -Wall -Wextra",
+        "CMAKE_EXE_LINKER_FLAGS": "-pthread -fexceptions -sPTHREAD_POOL_SIZE=8 -sPROXY_TO_PTHREAD -sEXIT_RUNTIME=1"
+      }
+    },
+    {
+      "name": "emscripten-wasm64",
+      "displayName": "Emscripten / wasm64",
+      "description": "Configure with `emcmake cmake --preset emscripten-wasm64`. ctest runs the tests under node, which needs memory64 (node 24 or later).",
+      "inherits": "emscripten",
+      "cacheVariables": {
+        "CMAKE_CXX_FLAGS": "-m64 -pthread -fexceptions -Wall -Wextra",
+        "CMAKE_EXE_LINKER_FLAGS": "-m64 -pthread -fexceptions -sPTHREAD_POOL_SIZE=8 -sPROXY_TO_PTHREAD -sEXIT_RUNTIME=1"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "linux-gcc",
+      "configurePreset": "linux-gcc"
+    },
+    {
+      "name": "linux-clang",
+      "configurePreset": "linux-clang"
+    },
+    {
+      "name": "linux-gcc-ci",
+      "configurePreset": "linux-gcc-ci"
+    },
+    {
+      "name": "linux-clang-ci",
+      "configurePreset": "linux-clang-ci"
+    },
+    {
+      "name": "linux-clang-asan-ubsan",
+      "configurePreset": "linux-clang-asan-ubsan"
+    },
+    {
+      "name": "linux-clang-tsan",
+      "configurePreset": "linux-clang-tsan"
+    },
+    {
+      "name": "linux-docs",
+      "configurePreset": "linux-docs"
+    },
+    {
+      "name": "macos-clang",
+      "configurePreset": "macos-clang"
+    },
+    {
+      "name": "windows-msvc",
+      "configurePreset": "windows-msvc",
+      "configuration": "RelWithDebInfo"
+    },
+    {
+      "name": "windows-msvc-ci",
+      "configurePreset": "windows-msvc-ci",
+      "configuration": "RelWithDebInfo"
+    },
+    {
+      "name": "windows-msvc-cross",
+      "configurePreset": "windows-msvc-cross"
+    },
+    {
+      "name": "android-arm64",
+      "configurePreset": "android-arm64"
+    },
+    {
+      "name": "emscripten",
+      "configurePreset": "emscripten"
+    },
+    {
+      "name": "linux-clang-libcxx",
+      "configurePreset": "linux-clang-libcxx"
+    },
+    {
+      "name": "linux-gcc-x86",
+      "configurePreset": "linux-gcc-x86"
+    },
+    {
+      "name": "linux-clang-x86",
+      "configurePreset": "linux-clang-x86"
+    },
+    {
+      "name": "linux-armv7",
+      "configurePreset": "linux-armv7"
+    },
+    {
+      "name": "linux-aarch64",
+      "configurePreset": "linux-aarch64"
+    },
+    {
+      "name": "linux-riscv64",
+      "configurePreset": "linux-riscv64"
+    },
+    {
+      "name": "linux-ppc64le",
+      "configurePreset": "linux-ppc64le"
+    },
+    {
+      "name": "linux-s390x",
+      "configurePreset": "linux-s390x"
+    },
+    {
+      "name": "ios",
+      "configurePreset": "ios"
+    },
+    {
+      "name": "freebsd-clang",
+      "configurePreset": "freebsd-clang"
+    },
+    {
+      "name": "windows-msvc-x86",
+      "configurePreset": "windows-msvc-x86",
+      "configuration": "RelWithDebInfo"
+    },
+    {
+      "name": "windows-msvc-arm64",
+      "configurePreset": "windows-msvc-arm64",
+      "configuration": "RelWithDebInfo"
+    },
+    {
+      "name": "windows-clang-cl",
+      "configurePreset": "windows-clang-cl",
+      "configuration": "RelWithDebInfo"
+    },
+    {
+      "name": "windows-mingw",
+      "configurePreset": "windows-mingw"
+    },
+    {
+      "name": "android-armv7",
+      "configurePreset": "android-armv7"
+    },
+    {
+      "name": "android-x86_64",
+      "configurePreset": "android-x86_64"
+    },
+    {
+      "name": "android-x86",
+      "configurePreset": "android-x86"
+    },
+    {
+      "name": "emscripten-wasm64",
+      "configurePreset": "emscripten-wasm64"
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "linux-gcc",
+      "configurePreset": "linux-gcc",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "linux-clang",
+      "configurePreset": "linux-clang",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "linux-gcc-ci",
+      "configurePreset": "linux-gcc-ci",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "linux-clang-ci",
+      "configurePreset": "linux-clang-ci",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "linux-clang-asan-ubsan",
+      "configurePreset": "linux-clang-asan-ubsan",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "linux-clang-tsan",
+      "configurePreset": "linux-clang-tsan",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "macos-clang",
+      "configurePreset": "macos-clang",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "windows-msvc",
+      "configurePreset": "windows-msvc",
+      "output": {
+        "outputOnFailure": true
+      },
+      "configuration": "RelWithDebInfo"
+    },
+    {
+      "name": "windows-msvc-ci",
+      "configurePreset": "windows-msvc-ci",
+      "output": {
+        "outputOnFailure": true
+      },
+      "configuration": "RelWithDebInfo"
+    },
+    {
+      "name": "windows-msvc-cross",
+      "configurePreset": "windows-msvc-cross",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "emscripten",
+      "configurePreset": "emscripten",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "linux-clang-libcxx",
+      "configurePreset": "linux-clang-libcxx",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "linux-gcc-x86",
+      "configurePreset": "linux-gcc-x86",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "linux-clang-x86",
+      "configurePreset": "linux-clang-x86",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "linux-armv7",
+      "configurePreset": "linux-armv7",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "linux-aarch64",
+      "configurePreset": "linux-aarch64",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "linux-riscv64",
+      "configurePreset": "linux-riscv64",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "linux-ppc64le",
+      "configurePreset": "linux-ppc64le",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "linux-s390x",
+      "configurePreset": "linux-s390x",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "freebsd-clang",
+      "configurePreset": "freebsd-clang",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "windows-msvc-x86",
+      "configurePreset": "windows-msvc-x86",
+      "output": {
+        "outputOnFailure": true
+      },
+      "configuration": "RelWithDebInfo"
+    },
+    {
+      "name": "windows-msvc-arm64",
+      "configurePreset": "windows-msvc-arm64",
+      "output": {
+        "outputOnFailure": true
+      },
+      "configuration": "RelWithDebInfo"
+    },
+    {
+      "name": "windows-clang-cl",
+      "configurePreset": "windows-clang-cl",
+      "output": {
+        "outputOnFailure": true
+      },
+      "configuration": "RelWithDebInfo"
+    },
+    {
+      "name": "windows-mingw",
+      "configurePreset": "windows-mingw",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "emscripten-wasm64",
+      "configurePreset": "emscripten-wasm64",
+      "output": {
+        "outputOnFailure": true
+      }
+    }
+  ]
+}

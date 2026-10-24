@@ -1,23 +1,20 @@
 #ifndef JFC_THREAD_GROUP_H
 #define JFC_THREAD_GROUP_H
 
-#include <algorithm>
 #include <chrono>
 #include <cstddef>
 #include <exception>
 #include <functional>
 #include <mutex>
 #include <memory>
-#include <optional>
 #include <thread>
 #include <vector>
 
 namespace jfc
 {
-    /// \brief where exceptions thrown by tasks are put
-    /// \warning Failures are silent until somebody looks.
-    /// \remark thread safe. The mutex is only touched when a task actually throws, so it costs
-    /// nothing on the path where they do not.
+    /// \brief where exceptions thrown by tasks given to add_tasks are put
+    /// \warning failures are silent until somebody looks.
+    /// \remark thread safe. The mutex is only touched when a task actually throws
     class failed_task_collection final
     {
         mutable std::mutex m_Mutex;
@@ -50,8 +47,9 @@ namespace jfc
         /// \brief how long a parked worker waits before looking again
         const std::chrono::milliseconds PARK_TIMEOUT{100};
 
-        /// \brief how many tasks a worker takes per trip to the queue
-        const std::size_t TASKS_PER_DEQUEUE{8};
+        /// \brief how many tasks a worker takes per trip to the queue. More than one is quicker for tasks of tens of
+        /// nanoseconds, but the tasks a worker has taken run one after another on it, and cancel_pending cannot reach them
+        const std::size_t TASKS_PER_DEQUEUE{1};
 
         /// \brief where exceptions escaping tasks are collected
         const std::shared_ptr<failed_task_collection> FAILED_TASKS
@@ -60,17 +58,12 @@ namespace jfc
 
     /// \brief task-based concurrency abstraction.
     /// instantiates a number of threads at construction, provides tasks for them to execute via a synchronized queue.
-    /// \remark all methods are thread friendly
-    /// \remark all const methods are synchronization free
-    /// \remark all mutable methods incur synchronization costs via atomic operations
+    /// \remark every method but the moves and the destructor may be called from any thread at once
     class thread_group final
     {
         public:
             /// \brief alias for task functor
             using task_type = std::function<void()>;
-
-            /// \brief alias for thread collection
-            using thread_collection_type = std::vector<std::thread>;
 
             /// \brief alias for thread id collection
             using thread_id_collection_type = std::vector<std::thread::id>;
@@ -78,41 +71,45 @@ namespace jfc
         private:
             struct shared_data_type;
 
+            [[nodiscard]] static std::shared_ptr<shared_data_type> make_shared_data(std::size_t aWorkerCount,
+                const thread_group_policy &aPolicy);
+
             /// \brief tell this group's workers to stop and wait for them
             void stop_and_join();
             
             std::shared_ptr<shared_data_type> m_SharedData; 
-            thread_collection_type m_Threads;
+            std::vector<std::thread> m_Threads;
             thread_id_collection_type m_Thread_IDs;
 
         public:
             /// \brief get the number of threads in the group
-            size_t thread_count() const;
+            [[nodiscard]] std::size_t thread_count() const;
 
-            /// brief returns a collection of IDs for the threads in the group
-            thread_id_collection_type thread_ids() const;
+            /// \brief returns a collection of IDs for the threads in the group
+            [[nodiscard]] thread_id_collection_type thread_ids() const;
 
             /// \brief adds a collection of tasks to the task collection
+            /// \throws std::bad_alloc if the queue cannot grow, and the tasks are not added
             void add_tasks(std::vector<task_type> &&tasks);
             /// \overload
             void add_tasks(task_type &&task);
 
             /// \brief run these tasks and return only once every one of them has finished
+            /// \throws the first exception a task of these threw, once every one of them has finished
             void run_and_wait(std::vector<task_type> &&tasks);
-
-            /// \brief run every task, taking aTasksPerDequeue of them at a time
-            void run_and_wait(std::vector<task_type> &&tasks, std::size_t aTasksPerDequeue);
 
             //! \brief one chunk of a fork-join
             using chunk_type = std::function<void(const std::size_t &aChunkIndex)>;
 
+            /// \overload
             void run_and_wait(std::size_t aChunkCount, const chunk_type &aChunk);
 
-            /// \brief removes and returns a task if the task collection is nonzero.
-            /// Use this to do task work from threads outside the group (typically this is the thread that created the group in the first place)
-            std::optional<task_type> try_get_task();
+            /// \brief runs one queued task on the calling thread, if there is one, and says whether there was. Lends a
+            /// thread outside the group to its work. A failure goes to failed_tasks(), or, with none, to the caller
+            bool run_one();
 
-            /// \brief drop every task that has not started yet, returning how many were dropped
+            /// \brief drop every task given to add_tasks that has not started yet, returning how many were dropped. A
+            /// run_and_wait's tasks are left to it
             std::size_t cancel_pending();
 
             /// \brief how many tasks have been added and not yet finished: waiting in the queue, or
@@ -120,19 +117,17 @@ namespace jfc
             /// loading until then, where its workers start only once its main thread is free.
             [[nodiscard]] std::size_t pending() const;
 
-        private:
-            //! both run_and_wait forms, which differ only in what they ask the workers for
-            void run_and_wait_at(std::vector<task_type> &&tasks, std::size_t aTasksPerDequeue);
+            /// \brief where exceptions escaping tasks given to add_tasks are collected: the policy's FAILED_TASKS
+            [[nodiscard]] std::shared_ptr<failed_task_collection> failed_tasks() const;
 
-        public:
-            /// \brief supports move semantics
+            /// \brief supports move semantics. The group moved from is left with no threads, and still works as one
             thread_group &operator=(thread_group &&b);
-            /// \brief supports move semantics
+            /// \brief supports move semantics. The group moved from is left with no threads, and still works as one
             thread_group(thread_group &&b); 
 
             /// \brief constructs a threadgroup with the specified number of threads.
             /// \throws std::invalid_argument if the policy asks for zero tasks per dequeue
-            thread_group(size_t threadNumber, const thread_group_policy &aPolicy = {});
+            thread_group(std::size_t threadNumber, const thread_group_policy &aPolicy = {});
 
             /// \brief construct a thread group of size std::thread::hardware_concurrency() -1
             thread_group();

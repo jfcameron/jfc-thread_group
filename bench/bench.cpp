@@ -14,7 +14,6 @@
 #include <memory>
 #include <condition_variable>
 #include <mutex>
-#include <optional>
 #include <queue>
 #include <string>
 #include <thread>
@@ -30,15 +29,14 @@
 namespace {
     using task_type = std::function<void()>;
 
-    inline void clobber() { asm volatile("" : : : "memory"); }
+    // a compiler barrier, so the work being timed is not moved or dropped
+    inline void clobber() { std::atomic_signal_fence(std::memory_order_seq_cst); }
 
     /// \brief lockless queue used by the library
     class moody_queue final {
         moodycamel::ConcurrentQueue<task_type> m_Queue;
 
     public:
-        static constexpr const char *name = "moody";
-
         void enqueue(task_type &&aTask) { m_Queue.enqueue(std::move(aTask)); }
 
         void enqueue_bulk(std::vector<task_type> &aTasks) {
@@ -60,8 +58,6 @@ namespace {
         std::mutex m_Mutex;
 
     public:
-        static constexpr const char *name = "std";
-
         void enqueue(task_type &&aTask) {
             const std::lock_guard<std::mutex> lock(m_Mutex);
 
@@ -142,12 +138,14 @@ namespace {
             if (m_Spins) m_SharedData->wake(false);
         }
 
-        std::optional<task_type> try_get_task() {
+        bool run_one() {
             task_type task;
 
-            if (m_SharedData->m_Tasks.try_dequeue(task)) return task;
+            if (!m_SharedData->m_Tasks.try_dequeue(task)) return false;
 
-            return {};
+            task();
+
+            return true;
         }
 
         explicit bench_group(const std::size_t aThreadCount, const std::size_t aDrain = 1,
@@ -246,7 +244,7 @@ namespace {
 
         void add_tasks(task_type &&aTask) { group.add_tasks(std::move(aTask)); }
 
-        std::optional<task_type> try_get_task() { return group.try_get_task(); }
+        bool run_one() { return group.run_one(); }
     };
 
     std::atomic<std::size_t> g_sink{0};
@@ -371,8 +369,7 @@ namespace {
             if (aBulk) group.add_tasks(std::move(tasks));
             else for (auto &t : tasks) group.add_tasks(std::move(t));
 
-            while (done.load(std::memory_order_acquire) < aTasks)
-                if (auto task = group.try_get_task()) (*task)();
+            while (done.load(std::memory_order_acquire) < aTasks) group.run_one();
         });
     }
 
@@ -476,7 +473,7 @@ namespace {
         return std::to_string(n) + " worker" + (n == 1 ? "" : "s");
     }
 
-    constexpr std::size_t LIBRARY_DRAIN = 8;
+    constexpr std::size_t LIBRARY_DRAIN = 1;
     constexpr std::size_t LIBRARY_SPINS = 16384;
 }
 
@@ -508,7 +505,7 @@ int main(int argc, char **argv) {
 
     heading("B. the queue under contention, producers vs consumers");
     columns();
-    for (const auto [p, c] : std::vector<std::pair<std::size_t, std::size_t>>{
+    for (const auto &[p, c] : std::vector<std::pair<std::size_t, std::size_t>>{
             {1, 1}, {1, 3}, {3, 1}, {3, 3}})
         row(std::to_string(p) + "p / " + std::to_string(c) + "c",
             contended<moody_queue>(p, c, OPS, PASSES),
@@ -525,12 +522,12 @@ int main(int argc, char **argv) {
     std::vector<std::size_t> threadCounts{1, 2, 4};
     if (hw > 4) threadCounts.push_back(hw - 1);
 
-    for (const auto [spin, ns] : std::vector<std::pair<std::size_t, double>>{
+    for (const auto &[spin, ns] : std::vector<std::pair<std::size_t, double>>{
             {0, 0.0}, {SPIN_SMALL, nsSmall}, {SPIN_LARGE, nsLarge}}) {
         char title[128];
 
         if (spin == 0) std::snprintf(title, sizeof title,
-            "C. through the group as the library ships it (drain 8, parking), empty task");
+            "C. through the group as the library ships it (drain 1, parking), empty task");
         else std::snprintf(title, sizeof title,
             "C. through the group as shipped, %.0fns of work per task", ns);
 
@@ -596,7 +593,7 @@ int main(int argc, char **argv) {
             empty_poll<moody_queue>(seen, OPS, PASSES),
             empty_poll<std_mutex_queue>(seen, OPS, PASSES));
 
-    for (const auto [spin, ns] : std::vector<std::pair<std::size_t, double>>{
+    for (const auto &[spin, ns] : std::vector<std::pair<std::size_t, double>>{
             {0, 0.0}, {SPIN_LARGE, nsLarge}}) {
         char title[160];
 
@@ -629,11 +626,11 @@ int main(int argc, char **argv) {
         std::puts("");
     }
 
-    heading("H. what the library gained by draining in blocks (its own workload, small tasks)");
+    heading("H. what draining in blocks of 8 would gain (TASKS_PER_DEQUEUE 8, small tasks)");
     std::printf("  %-30s %9s %9s   %6s\n", "", "drain 1", "drain 8", "gain");
     for (const auto threads : threadCounts) {
         const auto one = through_group<bench_group<moody_queue>>(threads, GROUP_TASKS, SPIN_SMALL, true, PASSES, 1);
-        const auto eight = through_group<bench_group<moody_queue>>(threads, GROUP_TASKS, SPIN_SMALL, true, PASSES, LIBRARY_DRAIN);
+        const auto eight = through_group<bench_group<moody_queue>>(threads, GROUP_TASKS, SPIN_SMALL, true, PASSES, 8);
 
         std::printf("  %-30s %9.1f %9.1f   %5.2fx\n", workers(threads).c_str(), one, eight, one / eight);
     }

@@ -1,3 +1,4 @@
 !.keep
 *.swp
 out/
+CMakeUserPresets.json

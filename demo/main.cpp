@@ -6,6 +6,7 @@
 #include <iostream>
 #include <sstream>
 #include <stdexcept>
+#include <string>
 #include <unordered_map>
 #include <vector>
 
@@ -70,10 +71,7 @@ void concurrent_impl(size_t threadCount) {
 
     std::cout << "work begins...\n";
 
-    while (task_count->load(std::memory_order_relaxed) > 0)
-    {
-        if (auto task = group.try_get_task()) (*task)();
-    }
+    while (task_count->load(std::memory_order_relaxed) > 0) group.run_one();
 
     const auto end_time(std::chrono::steady_clock::now());
 
@@ -86,9 +84,7 @@ void concurrent_impl(size_t threadCount) {
 void dispatcher_impl(size_t threadCount) {
     work_log.clear();
 
-    thread_group_policy policy;
-
-    thread_group group(threadCount, policy);
+    thread_group group(threadCount);
 
     work_log[std::this_thread::get_id()] = 0;
 
@@ -113,25 +109,19 @@ void dispatcher_impl(size_t threadCount) {
     for (size_t i(0); i < FAILING_TASK_COUNT; ++i)
         tasks.push_back([]() { throw std::runtime_error("this task was always going to fail"); });
 
-    group.run_and_wait(std::move(tasks));
+    std::string failure = "none";
+
+    try { group.run_and_wait(std::move(tasks)); }
+    catch (const std::exception &e) { failure = e.what(); }
 
     const auto end_time(std::chrono::steady_clock::now());
-
-    const auto failures = policy.FAILED_TASKS->take();
 
     std::cout
         << "run_and_wait ends.\n"
         << "nano seconds taken: "
         << std::chrono::duration_cast<std::chrono::nanoseconds>(end_time - start_time).count() << "\n"
         << "# of threads in group: " << group.thread_count() << "\n"
-        << "tasks that threw: " << failures.size()
-        << " (dropped because the collection was full: " << policy.FAILED_TASKS->discarded() << ")\n";
-
-    if (!failures.empty())
-    {
-        try { std::rethrow_exception(failures.front()); }
-        catch (const std::exception &e) { std::cout << "first failure says: " << e.what() << "\n"; }
-    }
+        << "first failure says: " << failure << "\n";
 }
 
 int main(const int argc, const char **argv)
