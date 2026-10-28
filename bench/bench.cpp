@@ -1,8 +1,8 @@
-// © Joseph Cameron - All Rights Reserved
+// © Joseph Cameron - MIT License
 
 #include <jfc/thread_group.h>
 
-#include <moody/concurrentqueue.h>
+#include <concurrentqueue/concurrentqueue.h>
 
 #include <atomic>
 #include <algorithm>

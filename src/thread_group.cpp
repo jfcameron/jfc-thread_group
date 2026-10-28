@@ -1,6 +1,8 @@
+// © Joseph Cameron - MIT License
+
 #include <jfc/thread_group.h>
 
-#include <moody/blockingconcurrentqueue.h>
+#include <concurrentqueue/blockingconcurrentqueue.h>
 
 #include <algorithm>
 #include <atomic>

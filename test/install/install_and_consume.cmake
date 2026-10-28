@@ -1,4 +1,4 @@
-# © Joseph Cameron - All Rights Reserved
+# © Joseph Cameron - MIT License
 
 function(_run aWhat)
     execute_process(COMMAND ${ARGN} RESULT_VARIABLE _result OUTPUT_VARIABLE _output ERROR_VARIABLE _output)
@@ -10,7 +10,13 @@ endfunction()
 
 file(REMOVE_RECURSE "${WORK_DIR}")
 
-_run("install" "${CMAKE_COMMAND}" --install "${BUILD_DIR}" --prefix "${WORK_DIR}/prefix" --config "${CONFIG}")
+set(_config_choice)
+
+if (CONFIG)
+    set(_config_choice --config "${CONFIG}")
+endif()
+
+_run("install" "${CMAKE_COMMAND}" --install "${BUILD_DIR}" --prefix "${WORK_DIR}/prefix" ${_config_choice})
 
 set(_generator_choices)
 
@@ -33,6 +39,6 @@ _run("configuring the consumer" "${CMAKE_COMMAND}"
     "-DCMAKE_BUILD_TYPE=${CONFIG}"
     "-DCMAKE_PREFIX_PATH=${WORK_DIR}/prefix")
 
-_run("building the consumer" "${CMAKE_COMMAND}" --build "${WORK_DIR}/build" --config "${CONFIG}")
+_run("building the consumer" "${CMAKE_COMMAND}" --build "${WORK_DIR}/build" ${_config_choice})
 
 _run("running the consumer" "${WORK_DIR}/build/consumer")

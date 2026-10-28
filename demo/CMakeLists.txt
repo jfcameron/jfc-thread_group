@@ -1,4 +1,4 @@
-# © Joseph Cameron - All Rights Reserved
+# © Joseph Cameron - MIT License
 
 add_executable(jfc-thread_group-demo
     "${CMAKE_CURRENT_SOURCE_DIR}/main.cpp")
