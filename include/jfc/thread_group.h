@@ -1,3 +1,5 @@
+// © Joseph Cameron - MIT License
+
 #ifndef JFC_THREAD_GROUP_H
 #define JFC_THREAD_GROUP_H
 
@@ -99,7 +101,7 @@ namespace jfc
             void run_and_wait(std::vector<task_type> &&tasks);
 
             //! \brief one chunk of a fork-join
-            using chunk_type = std::function<void(const std::size_t &aChunkIndex)>;
+            using chunk_type = std::function<void(std::size_t aChunkIndex)>;
 
             /// \overload
             void run_and_wait(std::size_t aChunkCount, const chunk_type &aChunk);

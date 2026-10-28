@@ -1,4 +1,4 @@
-// © Joseph Cameron - All Rights Reserved
+// © Joseph Cameron - MIT License
 
 #include <jfc/catch.hpp>
 
@@ -264,59 +264,65 @@ TEST_CASE( "jfc::thread_group test", "[jfc::thread_group]" )
 namespace {
     constexpr std::size_t WORKERS = 4;
     constexpr std::size_t TASKS = WORKERS + 1;
-    constexpr auto TASK_DURATION = std::chrono::milliseconds(40);
 }
 
 TEST_CASE( "jfc::thread_group dequeue granularity", "[jfc::thread_group]" )
 {
-    const auto sleeping_tasks = [](std::atomic<std::size_t> &aRan) {
+    const auto meeting_tasks = [](std::atomic<std::size_t> &aRunning, std::atomic<std::size_t> &aMet) {
         std::vector<jfc::thread_group::task_type> tasks;
 
         for (std::size_t i = 0; i < TASKS; ++i)
-            tasks.push_back([&aRan] {
-                std::this_thread::sleep_for(TASK_DURATION);
+            tasks.push_back([&aRunning, &aMet] {
+                ++aRunning;
 
-                aRan.fetch_add(1, std::memory_order_relaxed);
+                const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+
+                while (aRunning.load() < TASKS && std::chrono::steady_clock::now() < deadline)
+                    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+
+                if (aRunning.load() >= TASKS) ++aMet;
             });
 
         return tasks;
     };
 
-    const auto time_taken = [](auto &&aWork) {
-        const auto began = std::chrono::steady_clock::now();
+    const auto meets_after_busy_workers = [&meeting_tasks](const jfc::thread_group_policy &aPolicy) {
+        jfc::thread_group group(WORKERS, aPolicy);
 
-        aWork();
+        std::atomic<bool> go = false;
+        std::atomic<std::size_t> busy = 0;
 
-        return std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::steady_clock::now() - began);
+        group.add_tasks(std::vector<jfc::thread_group::task_type>(WORKERS, [&go, &busy] {
+            ++busy;
+
+            while (!go.load()) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }));
+
+        for (int i = 0; i < 5000 && busy.load() < WORKERS; ++i) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+
+        const auto allBusy = busy.load() == WORKERS;
+
+        std::atomic<std::size_t> running = 0, met = 0;
+
+        std::thread runner([&] { group.run_and_wait(meeting_tasks(running, met)); });
+
+        while (running.load() < 1) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+
+        go = true;
+
+        runner.join();
+
+        return allBusy ? met.load() : 0;
     };
 
     SECTION("a batch no wider than the group is spread across it, not swallowed by one worker")
     {
-        jfc::thread_group group(WORKERS);
-
-        std::atomic<std::size_t> ran = 0;
-
-        const auto elapsed = time_taken([&] { group.run_and_wait(sleeping_tasks(ran)); });
-
-        REQUIRE(ran.load() == TASKS);
-
-        INFO("took " << elapsed.count() << " ms where serial would be "
-            << (TASK_DURATION * TASKS).count() << " ms");
-
-        REQUIRE(elapsed < TASK_DURATION * TASKS / 2);
+        REQUIRE(meets_after_busy_workers({}) == TASKS);
     }
 
     SECTION("and when workers may take eight at a time")
     {
-        jfc::thread_group group(WORKERS, jfc::thread_group_policy{std::chrono::milliseconds{100}, 8});
-
-        std::atomic<std::size_t> ran = 0;
-
-        const auto elapsed = time_taken([&] { group.run_and_wait(sleeping_tasks(ran)); });
-
-        REQUIRE(ran.load() == TASKS);
-        REQUIRE(elapsed < TASK_DURATION * TASKS / 2);
+        REQUIRE(meets_after_busy_workers(jfc::thread_group_policy{std::chrono::milliseconds{100}, 8}) == TASKS);
     }
 
     SECTION("many small tasks still all run")
@@ -455,7 +461,6 @@ TEST_CASE( "jfc::thread_group run_and_wait waits on its own batch alone", "[jfc:
 {
     using namespace std::chrono_literals;
 
-    constexpr auto LONG = 150ms;
     constexpr std::size_t HANDED = 3;
 
     jfc::thread_group group(1, jfc::thread_group_policy{std::chrono::milliseconds{100}, 1});
@@ -465,6 +470,7 @@ TEST_CASE( "jfc::thread_group run_and_wait waits on its own batch alone", "[jfc:
     std::atomic<std::size_t> handedRan = 0;
     std::atomic<bool> handedOnCaller = false;
     std::atomic<bool> started = false;
+    std::atomic<bool> batchDone = false;
 
     std::vector<jfc::thread_group::task_type> handed;
 
@@ -474,7 +480,9 @@ TEST_CASE( "jfc::thread_group run_and_wait waits on its own batch alone", "[jfc:
 
             if (std::this_thread::get_id() == caller) handedOnCaller = true;
 
-            std::this_thread::sleep_for(LONG);
+            const auto deadline = std::chrono::steady_clock::now() + 10s;
+
+            while (!batchDone.load() && std::chrono::steady_clock::now() < deadline) std::this_thread::sleep_for(1ms);
 
             handedRan.fetch_add(1);
         });
@@ -490,19 +498,16 @@ TEST_CASE( "jfc::thread_group run_and_wait waits on its own batch alone", "[jfc:
     for (std::size_t i = 0; i < 20; ++i)
         batch.push_back([&batchRan] { batchRan.fetch_add(1); });
 
-    const auto began = std::chrono::steady_clock::now();
-
     group.run_and_wait(std::move(batch));
 
-    const auto took = std::chrono::steady_clock::now() - began;
+    const auto handedAtReturn = handedRan.load();
 
-    SECTION("the batch is done, and soon: not after the long work queued ahead of it")
+    batchDone = true;
+
+    SECTION("the batch is done before the long work queued ahead of it")
     {
         REQUIRE(batchRan.load() == 20);
-
-        INFO("took " << std::chrono::duration_cast<std::chrono::milliseconds>(took).count() << " ms");
-
-        REQUIRE(took < LONG);
+        REQUIRE(handedAtReturn == 0);
     }
 
     SECTION("the caller ran none of the long work")

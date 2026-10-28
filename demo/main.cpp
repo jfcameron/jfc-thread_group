@@ -1,3 +1,5 @@
+// © Joseph Cameron - MIT License
+
 #include <jfc/thread_group.h>
 
 #include <atomic>

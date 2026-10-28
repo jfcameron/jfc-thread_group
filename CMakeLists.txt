@@ -1,4 +1,4 @@
-# © Joseph Cameron - All Rights Reserved
+# © Joseph Cameron - MIT License
 
 cmake_minimum_required(VERSION 3.21 FATAL_ERROR)
 
@@ -10,6 +10,10 @@ project(jfc-thread_group
     VERSION 1.0
     DESCRIPTION "Tool for task-based concurrent programming: a thread group built around the lockless queue, moody concurrent queue project."
     LANGUAGES CXX)
+
+if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 11)
+    message(FATAL_ERROR "jfc-thread_group needs GCC 11 or later, for std::atomic::wait")
+endif()
 
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/jfc-cmake/jfclib.cmake")
 
@@ -57,7 +61,7 @@ target_include_directories(jfc-thread_group
         "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
         "$<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>"
     PRIVATE
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/include")
+        "${CMAKE_CURRENT_SOURCE_DIR}/extern")
 
 target_compile_features(jfc-thread_group PUBLIC cxx_std_20)
 

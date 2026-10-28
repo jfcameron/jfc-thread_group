@@ -4,6 +4,27 @@ Task-based concurrency lib. Internally uses moody concurrent queue lockless queu
 
 `pending()` says how many tasks have been added and not yet finished, so a caller can tell when everything handed over has run.
 
+API documentation: https://jfcameron.github.io/jfc-thread_group/
+
+## Getting Started
+Install cmake 3.21 or greater, and a c++20 compatible compiler (GCC 11 or later, for `std::atomic::wait`)
+```
+# initialize the tree
+git submodule update --init --recursive
+
+# generate the script to build the library on linux using gcc
+cmake --preset linux-gcc
+
+# build the library
+cmake --build --preset linux-gcc
+
+# run the test suite
+ctest --preset linux-gcc
+```
+For a browser, configure through Emscripten's wrapper, which supplies its toolchain: `emcmake cmake --preset emscripten`.
+
+See `CMakePresets.json` for the full list of supported platforms and compilers. See `.github/workflows/ci.yml` to see exactly how CI runners build it on different platforms.
+
 ## In a browser
 
 `std::thread` is Emscripten's pthreads, so the library builds and runs on a cross-origin isolated page with `-pthread`. What to know there:
