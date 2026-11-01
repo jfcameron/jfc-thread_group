@@ -10,6 +10,10 @@
 #include <stdexcept>
 #include <chrono>
 #include <thread>
+#include <type_traits>
+
+static_assert(std::is_nothrow_move_constructible_v<jfc::thread_group>);
+static_assert(std::is_nothrow_move_assignable_v<jfc::thread_group>);
 
 TEST_CASE( "jfc::thread_group test", "[jfc::thread_group]" )
 {

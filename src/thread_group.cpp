@@ -218,19 +218,19 @@ namespace jfc
         return m_Threads.size();
     }
 
-    void thread_group::add_tasks(std::vector<thread_group::task_type> &&tasks)
+    void thread_group::add_tasks(std::vector<thread_group::task_type> &&aTasks)
     {
-        m_SharedData->m_Pending.fetch_add(tasks.size(), std::memory_order_acq_rel);
+        m_SharedData->m_Pending.fetch_add(aTasks.size(), std::memory_order_acq_rel);
 
-        if (m_SharedData->m_Tasks.enqueue_bulk(std::make_move_iterator(tasks.begin()), tasks.size())) return;
+        if (m_SharedData->m_Tasks.enqueue_bulk(std::make_move_iterator(aTasks.begin()), aTasks.size())) return;
 
-        m_SharedData->m_Pending.fetch_sub(tasks.size(), std::memory_order_acq_rel);
+        m_SharedData->m_Pending.fetch_sub(aTasks.size(), std::memory_order_acq_rel);
 
         throw std::bad_alloc();
     }
-    void thread_group::add_tasks(thread_group::task_type &&task)
+    void thread_group::add_tasks(thread_group::task_type &&aTask)
     {
-        if (!m_SharedData->enqueue(std::move(task))) throw std::bad_alloc();
+        if (!m_SharedData->enqueue(std::move(aTask))) throw std::bad_alloc();
     }
 
     std::size_t thread_group::pending() const
@@ -254,13 +254,13 @@ namespace jfc
         run_and_wait(std::move(tasks));
     }
 
-    void thread_group::run_and_wait(std::vector<thread_group::task_type> &&tasks)
+    void thread_group::run_and_wait(std::vector<thread_group::task_type> &&aTasks)
     {
-        if (tasks.empty()) return;
+        if (aTasks.empty()) return;
 
         const auto pBatch = std::make_shared<shared_data_type::batch>();
 
-        pBatch->tasks = std::move(tasks);
+        pBatch->tasks = std::move(aTasks);
         pBatch->remaining.store(pBatch->tasks.size(), std::memory_order_relaxed);
         pBatch->shared = m_SharedData;
 
@@ -352,34 +352,34 @@ namespace jfc
         m_Thread_IDs.clear();
     }
 
-    thread_group &thread_group::operator=(thread_group &&b)
+    thread_group &thread_group::operator=(thread_group &&aOther) noexcept
     {
-        if (this == &b) return *this;
+        if (this == &aOther) return *this;
 
         stop_and_join();
 
-        m_SharedData = std::exchange(b.m_SharedData, make_shared_data(0, {}));
+        m_SharedData = std::exchange(aOther.m_SharedData, make_shared_data(0, {}));
 
-        m_Threads = std::move(b.m_Threads);
+        m_Threads = std::move(aOther.m_Threads);
 
-        m_Thread_IDs = std::move(b.m_Thread_IDs);
+        m_Thread_IDs = std::move(aOther.m_Thread_IDs);
 
-        b.m_Threads.clear();
+        aOther.m_Threads.clear();
 
-        b.m_Thread_IDs.clear();
+        aOther.m_Thread_IDs.clear();
 
         return *this;
     }
-    thread_group::thread_group(thread_group &&b) { (*this) = std::move(b); }
+    thread_group::thread_group(thread_group &&aOther) noexcept { (*this) = std::move(aOther); }
 
-    thread_group::thread_group(std::size_t threadNumber, const thread_group_policy &aPolicy)
-    : m_SharedData(make_shared_data(threadNumber, aPolicy))
+    thread_group::thread_group(std::size_t aThreadNumber, const thread_group_policy &aPolicy)
+    : m_SharedData(make_shared_data(aThreadNumber, aPolicy))
     {
         if (!aPolicy.TASKS_PER_DEQUEUE)
             throw std::invalid_argument(
                 "jfc::thread_group: thread_group_policy::TASKS_PER_DEQUEUE must be at least 1");
 
-        m_Threads.reserve(threadNumber);
+        m_Threads.reserve(aThreadNumber);
 
         auto shared = m_SharedData;
 
@@ -388,7 +388,7 @@ namespace jfc
 
         try
         {
-            for (decltype(threadNumber) i(0); i < threadNumber; ++i)
+            for (decltype(aThreadNumber) i(0); i < aThreadNumber; ++i)
             {
                 m_Threads.push_back(std::thread([shared, tasksPerDequeue, parkTimeout]()
                 {

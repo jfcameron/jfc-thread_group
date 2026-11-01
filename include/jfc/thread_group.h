@@ -92,13 +92,13 @@ namespace jfc
 
             /// \brief adds a collection of tasks to the task collection
             /// \throws std::bad_alloc if the queue cannot grow, and the tasks are not added
-            void add_tasks(std::vector<task_type> &&tasks);
+            void add_tasks(std::vector<task_type> &&aTasks);
             /// \overload
-            void add_tasks(task_type &&task);
+            void add_tasks(task_type &&aTask);
 
             /// \brief run these tasks and return only once every one of them has finished
             /// \throws the first exception a task of these threw, once every one of them has finished
-            void run_and_wait(std::vector<task_type> &&tasks);
+            void run_and_wait(std::vector<task_type> &&aTasks);
 
             //! \brief one chunk of a fork-join
             using chunk_type = std::function<void(std::size_t aChunkIndex)>;
@@ -123,13 +123,13 @@ namespace jfc
             [[nodiscard]] std::shared_ptr<failed_task_collection> failed_tasks() const;
 
             /// \brief supports move semantics. The group moved from is left with no threads, and still works as one
-            thread_group &operator=(thread_group &&b);
+            thread_group &operator=(thread_group &&aOther) noexcept;
             /// \brief supports move semantics. The group moved from is left with no threads, and still works as one
-            thread_group(thread_group &&b); 
+            thread_group(thread_group &&aOther) noexcept;
 
             /// \brief constructs a threadgroup with the specified number of threads.
             /// \throws std::invalid_argument if the policy asks for zero tasks per dequeue
-            thread_group(std::size_t threadNumber, const thread_group_policy &aPolicy = {});
+            thread_group(std::size_t aThreadNumber, const thread_group_policy &aPolicy = {});
 
             /// \brief construct a thread group of size std::thread::hardware_concurrency() -1
             thread_group();
